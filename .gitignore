@@ -1,0 +1,14 @@
+# Secrets: server-side keys for tools/ and the app's local config
+.env
+app/env/*.json
+!app/env/*.example.json
+
+# Tooling
+tools/node_modules/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+
+# Original brief (contains credentials); SPEC.md is the clean copy
+lookme.md
