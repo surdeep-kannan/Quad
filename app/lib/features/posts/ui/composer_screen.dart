@@ -1,0 +1,470 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart' show ImageSource;
+import 'package:material_ui/material_ui.dart';
+
+import '../../../core/data/media.dart';
+import '../../../core/data/refs.dart';
+import '../../../core/theme/app_theme.dart';
+import '../../../core/utils/context_x.dart';
+import '../../../core/utils/errors.dart';
+import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/app_icons.dart';
+import '../../../core/widgets/avatars.dart';
+import '../../../core/widgets/chips.dart';
+import '../../../core/widgets/sheets.dart';
+import '../../communities/data/community.dart';
+import '../../communities/providers.dart';
+import '../../profile/data/profile.dart';
+import '../../profile/providers.dart';
+import '../data/post.dart';
+import '../data/post_repository.dart';
+import '../providers.dart';
+
+class ComposerScreen extends ConsumerStatefulWidget {
+  const ComposerScreen({super.key, this.communityId, this.initialType, this.eventId});
+
+  final String? communityId;
+  final String? initialType;
+  final String? eventId;
+
+  @override
+  ConsumerState<ComposerScreen> createState() => _ComposerScreenState();
+}
+
+class _ComposerScreenState extends ConsumerState<ComposerScreen> {
+  late PostType _type = PostType.from(widget.initialType ?? (widget.eventId != null ? 'event' : 'text'));
+  Community? _community;
+  final _title = TextEditingController();
+  final _body = TextEditingController();
+  final List<TextEditingController> _options = [TextEditingController(), TextEditingController()];
+  final List<PickedFile> _images = [];
+  PickedFile? _video;
+  final Set<String> _tags = {};
+  Duration _pollDuration = const Duration(days: 3);
+  bool _posting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.communityId != null) {
+      final mine = ref.read(myCommunitiesProvider).value ?? const [];
+      _community = mine.where((c) => c.id == widget.communityId).firstOrNull;
+    }
+    _title.addListener(_refresh);
+    _body.addListener(_refresh);
+  }
+
+  void _refresh() => setState(() {});
+
+  @override
+  void dispose() {
+    _title.dispose();
+    _body.dispose();
+    for (final c in _options) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  bool get _needsTitle => const {PostType.question, PostType.poll, PostType.announcement, PostType.achievement}.contains(_type);
+
+  bool get _valid {
+    if (_needsTitle && _title.text.trim().isEmpty) return false;
+    return switch (_type) {
+      PostType.poll => _options.where((c) => c.text.trim().isNotEmpty).length >= 2,
+      PostType.image => _images.isNotEmpty,
+      PostType.video => _video != null,
+      PostType.event => widget.eventId != null,
+      _ => _title.text.trim().isNotEmpty || _body.text.trim().isNotEmpty || _images.isNotEmpty,
+    };
+  }
+
+  Future<void> _pickImages() async {
+    final picked = await MediaPicker.images(limit: 4 - _images.length);
+    if (picked.isEmpty) return;
+    setState(() {
+      _images.addAll(picked.take(4 - _images.length));
+      if (_type == PostType.text) _type = PostType.image;
+    });
+  }
+
+  Future<void> _pickVideo() async {
+    final picked = await MediaPicker.video();
+    if (picked == null) return;
+    if (picked.size > 50 * 1024 * 1024) {
+      if (mounted) showToast(context, 'Videos can be up to 50 MB.', error: true);
+      return;
+    }
+    setState(() => _video = picked);
+  }
+
+  Future<void> _chooseDestination() async {
+    final communities = ref.read(myCommunitiesProvider).value ?? const [];
+    final picked = await showAppSheet<Object>(
+      context,
+      builder: (sheetContext) => ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.only(bottom: Space.lg),
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(Space.xl, 0, Space.xl, Space.sm),
+            child: Text('Post to', style: sheetContext.text.titleMedium),
+          ),
+          ListTile(
+            leading: const Icon(AppIcons.user),
+            title: const Text('Your profile'),
+            subtitle: const Text('Visible to everyone who visits your profile'),
+            onTap: () => Navigator.of(sheetContext).pop('profile'),
+          ),
+          for (final community in communities)
+            ListTile(
+              leading: CommunityAvatar(name: community.name, color: community.color, url: community.avatarUrl, size: 36),
+              title: Text(community.name),
+              subtitle: Text(community.isMod ? 'You moderate this community' : '${community.membersCount} members'),
+              onTap: () => Navigator.of(sheetContext).pop(community),
+            ),
+        ],
+      ),
+    );
+    if (picked == null) return;
+    setState(() {
+      _community = picked is Community ? picked : null;
+      if (_type == PostType.announcement && !(_community?.isMod ?? false)) _type = PostType.text;
+    });
+  }
+
+  Future<void> _post() async {
+    setState(() => _posting = true);
+    try {
+      final storage = ref.read(storageRepositoryProvider);
+      final media = <MediaItem>[];
+      if (_type == PostType.video && _video != null) {
+        final url = await storage.uploadMedia(_video!, folder: 'posts');
+        media.add(MediaItem(url: url, type: 'video'));
+      } else {
+        for (final image in _images) {
+          final url = await storage.uploadMedia(image, folder: 'posts');
+          media.add(MediaItem(url: url, type: 'image', width: image.width, height: image.height));
+        }
+      }
+      final id = await ref.read(postRepositoryProvider).create(
+            type: _type,
+            communityId: _community?.id,
+            title: _title.text.trim().isEmpty ? null : _title.text.trim(),
+            body: _body.text.trim().isEmpty ? null : _body.text.trim(),
+            media: media,
+            tags: _tags.toList(),
+            eventId: widget.eventId,
+            pollOptions: _type == PostType.poll ? [for (final c in _options) c.text.trim()] : null,
+            pollEndsAt: _type == PostType.poll ? DateTime.now().add(_pollDuration) : null,
+          );
+      for (final mode in FeedMode.values) {
+        ref.invalidate(homeFeedProvider(mode));
+      }
+      if (_community != null) ref.invalidate(communityFeedProvider);
+      if (!mounted) return;
+      context.pop();
+      showToast(context, 'Posted', icon: AppIcons.checkCircle);
+      context.push('/post/$id');
+    } catch (error) {
+      if (mounted) showToast(context, friendlyError(error), error: true);
+    } finally {
+      if (mounted) setState(() => _posting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final me = ref.watch(myProfileProvider).value;
+    final canAnnounce = _community?.isMod ?? false;
+    final types = [
+      PostType.text,
+      PostType.image,
+      PostType.question,
+      PostType.poll,
+      PostType.achievement,
+      if (canAnnounce) PostType.announcement,
+      PostType.video,
+      if (widget.eventId != null) PostType.event,
+    ];
+
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(tooltip: 'Close', icon: const Icon(AppIcons.close), onPressed: () => context.pop()),
+        title: const Text('New post'),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: AppButton(
+              label: 'Post',
+              size: ButtonSize.small,
+              loading: _posting,
+              onPressed: _valid && !_posting ? _post : null,
+            ),
+          ),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(Space.gutter, 4, Space.gutter, 120),
+        children: [
+          Row(
+            children: [
+              if (me != null) UserAvatar(name: me.fullName, url: me.avatarUrl, size: 40),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Material(
+                    color: c.surfaceMuted,
+                    shape: const StadiumBorder(),
+                    child: InkWell(
+                      customBorder: const StadiumBorder(),
+                      onTap: _chooseDestination,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (_community != null) ...[
+                              CommunityAvatar(name: _community!.name, color: _community!.color, url: _community!.avatarUrl, size: 18),
+                              const SizedBox(width: 6),
+                            ],
+                            Flexible(
+                              child: Text(
+                                _community?.name ?? 'Your profile',
+                                overflow: TextOverflow.ellipsis,
+                                style: context.text.labelMedium,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            const Icon(AppIcons.down, size: 14),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: Space.lg),
+          ChipRow(
+            padding: EdgeInsets.zero,
+            children: [
+              for (final type in types)
+                PillChip(
+                  label: type.label,
+                  icon: type.icon,
+                  dense: true,
+                  selected: _type == type,
+                  onTap: () => setState(() => _type = type),
+                ),
+            ],
+          ),
+          const SizedBox(height: Space.lg),
+          if (_needsTitle || _type == PostType.text)
+            _BareField(
+              controller: _title,
+              hint: switch (_type) {
+                PostType.question => 'What do you want to ask?',
+                PostType.poll => 'Ask a question',
+                PostType.announcement => 'Announcement title',
+                PostType.achievement => 'What did you achieve?',
+                _ => 'Title (optional)',
+              },
+              style: context.text.headlineSmall!,
+              maxLines: 3,
+            ),
+          _BareField(
+            controller: _body,
+            hint: switch (_type) {
+              PostType.question => 'Add details so people can help (optional)',
+              PostType.achievement => 'Tell the story: the team, the build, what you learned',
+              PostType.image || PostType.video => 'Write a caption…',
+              PostType.event => 'Say something about the event…',
+              _ => 'What\'s happening on campus?',
+            },
+            style: context.text.bodyLarge!,
+            maxLines: null,
+            minLines: 3,
+          ),
+          if (_type == PostType.poll) ...[
+            const SizedBox(height: Space.md),
+            for (var i = 0; i < _options.length; i++)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: TextField(
+                  controller: _options[i],
+                  onChanged: (_) => setState(() {}),
+                  maxLength: 80,
+                  decoration: InputDecoration(
+                    hintText: 'Option ${i + 1}',
+                    counterText: '',
+                    suffixIcon: _options.length > 2
+                        ? IconButton(
+                            tooltip: 'Remove option',
+                            icon: const Icon(AppIcons.close, size: 18),
+                            onPressed: () => setState(() => _options.removeAt(i).dispose()),
+                          )
+                        : null,
+                  ),
+                ),
+              ),
+            if (_options.length < 6)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () => setState(() => _options.add(TextEditingController())),
+                  icon: const Icon(AppIcons.plus, size: 18),
+                  label: const Text('Add option'),
+                ),
+              ),
+            const SizedBox(height: Space.sm),
+            Text('Poll length', style: context.text.labelMedium!.copyWith(color: c.inkMuted)),
+            const SizedBox(height: Space.sm),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final (label, duration) in [
+                  ('1 day', const Duration(days: 1)),
+                  ('3 days', const Duration(days: 3)),
+                  ('1 week', const Duration(days: 7)),
+                ])
+                  PillChip(label: label, dense: true, selected: _pollDuration == duration, onTap: () => setState(() => _pollDuration = duration)),
+              ],
+            ),
+          ],
+          if (_images.isNotEmpty) ...[
+            const SizedBox(height: Space.md),
+            SizedBox(
+              height: 110,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: _images.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 8),
+                itemBuilder: (_, i) => Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(Radii.md),
+                      child: Image.memory(_images[i].bytes, width: 110, height: 110, fit: BoxFit.cover),
+                    ),
+                    Positioned(
+                      top: 4,
+                      right: 4,
+                      child: GestureDetector(
+                        onTap: () => setState(() => _images.removeAt(i)),
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                          child: const Icon(AppIcons.close, size: 14, color: Colors.white),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          if (_type == PostType.video) ...[
+            const SizedBox(height: Space.md),
+            _video == null
+                ? AppButton(label: 'Choose a video', icon: AppIcons.video, variant: ButtonVariant.secondary, onPressed: _pickVideo)
+                : ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(AppIcons.video),
+                    title: Text(_video!.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    subtitle: Text('${(_video!.size / (1024 * 1024)).toStringAsFixed(1)} MB'),
+                    trailing: IconButton(
+                      tooltip: 'Remove video',
+                      icon: const Icon(AppIcons.close),
+                      onPressed: () => setState(() => _video = null),
+                    ),
+                  ),
+          ],
+          const SizedBox(height: Space.xl),
+          Text('Topics', style: context.text.labelMedium!.copyWith(color: c.inkMuted)),
+          const SizedBox(height: 4),
+          Text('Pick up to 3 so the right people see this.', style: context.text.bodySmall),
+          const SizedBox(height: Space.sm),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final entry in Interests.all.entries.take(16))
+                PillChip(
+                  label: entry.value,
+                  dense: true,
+                  selected: _tags.contains(entry.key),
+                  onTap: () => setState(() {
+                    if (!_tags.remove(entry.key) && _tags.length < 3) _tags.add(entry.key);
+                  }),
+                ),
+            ],
+          ),
+        ],
+      ),
+      bottomNavigationBar: _type == PostType.video || _type == PostType.event || _type == PostType.poll
+          ? null
+          : SafeArea(
+              child: Container(
+                decoration: BoxDecoration(border: Border(top: BorderSide(color: c.line))),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Row(
+                  children: [
+                    IconButton(
+                      tooltip: 'Add photos',
+                      icon: const Icon(AppIcons.image),
+                      onPressed: _images.length >= 4 ? null : _pickImages,
+                    ),
+                    IconButton(
+                      tooltip: 'Take a photo',
+                      icon: const Icon(AppIcons.camera),
+                      onPressed: _images.length >= 4
+                          ? null
+                          : () async {
+                              final photo = await MediaPicker.image(source: ImageSource.camera);
+                              if (photo != null) setState(() => _images.add(photo));
+                            },
+                    ),
+                    const Spacer(),
+                    Text('${_images.length}/4 photos', style: context.text.bodySmall),
+                    const SizedBox(width: 8),
+                  ],
+                ),
+              ),
+            ),
+    );
+  }
+}
+
+class _BareField extends StatelessWidget {
+  const _BareField({required this.controller, required this.hint, required this.style, this.maxLines, this.minLines});
+
+  final TextEditingController controller;
+  final String hint;
+  final TextStyle style;
+  final int? maxLines;
+  final int? minLines;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      style: style,
+      maxLines: maxLines,
+      minLines: minLines,
+      textCapitalization: TextCapitalization.sentences,
+      decoration: InputDecoration(
+        hintText: hint,
+        hintStyle: style.copyWith(color: context.colors.inkSubtle),
+        filled: false,
+        border: InputBorder.none,
+        enabledBorder: InputBorder.none,
+        focusedBorder: InputBorder.none,
+        contentPadding: const EdgeInsets.symmetric(vertical: 6),
+      ),
+    );
+  }
+}
