@@ -219,6 +219,8 @@ Legend: ✅ done · 🟡 partly done or untested · ❌ not done
 | Upload (video up to 50 MB / 90 s, optional cover, topic, community) | ✅ |
 | Like (and double-tap like), comment, share, save | ✅ comments open in a sheet over the reel, which keeps playing above it |
 | Videos and reels shown inside posts (feed and post page) | ✅ tap to play in feeds; plays automatically on the post page |
+| Phone-shaped reels fill the screen; wider videos aren't cropped | ✅ letterboxed when the shape differs by more than 20% |
+| Videos keep playing during a phone call or while other audio plays | ✅ the player doesn't wait for Android audio focus (`mixWithOthers`); side effect: music from another app keeps playing too |
 | Views counted | ✅ |
 | Server-side processing (compression, HLS, thumbnails) | ❌ (see section 5) |
 

@@ -141,7 +141,12 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
     super.initState();
     final url = widget.post.video?.url;
     if (url != null) {
-      _video = VideoPlayerController.networkUrl(Uri.parse(url))
+      // mixWithOthers: don't wait for audio focus, so the video still runs
+      // during a phone call or while another app holds the audio.
+      _video = VideoPlayerController.networkUrl(
+        Uri.parse(url),
+        videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+      )
         ..setLooping(true)
         ..initialize().then((_) {
           if (!mounted) return;

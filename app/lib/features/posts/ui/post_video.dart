@@ -46,7 +46,11 @@ class _PostVideoState extends State<PostVideo> {
 
   Future<void> _load({required bool play}) async {
     if (_controller != null) return;
-    final controller = VideoPlayerController.networkUrl(Uri.parse(widget.media.url));
+    // mixWithOthers: keep playing during a phone call (see reels_screen.dart).
+    final controller = VideoPlayerController.networkUrl(
+      Uri.parse(widget.media.url),
+      videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+    );
     setState(() {
       _controller = controller;
       _failed = false;
