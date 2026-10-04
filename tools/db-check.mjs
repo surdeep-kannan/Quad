@@ -6,11 +6,13 @@
 //
 // Nothing here touches a remote database.
 
+import { createHmac } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
 import { pg_trgm } from '@electric-sql/pglite/contrib/pg_trgm';
+import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const migrationsDir = join(root, 'supabase', 'migrations');
@@ -68,7 +70,14 @@ const SUPABASE_STUBS = `
   $$;
 
   create schema extensions;
+  create extension pgcrypto with schema extensions;
   grant usage on schema public, auth, storage, realtime, extensions to anon, authenticated, service_role;
+
+  -- Supabase Vault: the real view decrypts; here it's a plain table.
+  create schema vault;
+  create table vault.decrypted_secrets (
+    id uuid primary key default gen_random_uuid(), name text unique, decrypted_secret text
+  );
   grant all on storage.objects to anon, authenticated, service_role;
   grant select, insert on realtime.messages to authenticated;
   alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
@@ -88,7 +97,7 @@ function check(name, condition, detail = '') {
 }
 
 async function main() {
-  const db = new PGlite({ extensions: { pg_trgm } });
+  const db = new PGlite({ extensions: { pg_trgm, pgcrypto } });
   await db.exec(SUPABASE_STUBS);
   try {
     await db.exec('create publication supabase_realtime;');
@@ -471,6 +480,74 @@ async function runScenarios(db) {
     `select count(*)::int as n from public.notifications where user_id = $1 and type = 'missed_call'`, [diya]);
   check('missed calls notify the other person', missed.n === 1);
 
+  // LiveKit call tokens ----------------------------------------------------
+  const LK_KEY = 'APItestkey';
+  const LK_SECRET = 'test-secret-that-is-long-enough-for-hs256';
+  const decodeJwt = (token) => {
+    const [header, payload, signature] = token.split('.');
+    const expected = createHmac('sha256', LK_SECRET).update(`${header}.${payload}`).digest('base64url');
+    return {
+      header: JSON.parse(Buffer.from(header, 'base64url').toString()),
+      payload: JSON.parse(Buffer.from(payload, 'base64url').toString()),
+      validSignature: signature === expected,
+    };
+  };
+  let liveCall;
+  await as(db, aarav, async () => {
+    liveCall = (await one(db, `select public.start_call($1, 'voice') as id`, [directId])).id;
+    const notSetUp = await fails(db, `select public.call_token(p_call => $1)`, [liveCall]);
+    check('call tokens need LiveKit to be configured', notSetUp?.includes('set up'), notSetUp ?? 'no error');
+  });
+  await db.query(
+    `insert into vault.decrypted_secrets (name, decrypted_secret)
+     values ('livekit_url', 'wss://example.livekit.cloud'), ('livekit_api_key', $1), ('livekit_api_secret', $2)`,
+    [LK_KEY, LK_SECRET],
+  );
+  await as(db, aarav, async () => {
+    const grant = (await one(db, `select public.call_token(p_call => $1) as g`, [liveCall])).g;
+    const jwt = decodeJwt(grant.token);
+    check('call tokens are signed with the LiveKit secret', jwt.validSignature && jwt.header.alg === 'HS256');
+    check('call tokens name the API key, the caller and the call room',
+      jwt.payload.iss === LK_KEY && jwt.payload.sub === aarav && jwt.payload.video.room === `call-${liveCall}`
+        && jwt.payload.video.roomJoin === true && grant.url === 'wss://example.livekit.cloud',
+      JSON.stringify(jwt.payload));
+    check('call tokens expire within a few hours',
+      jwt.payload.exp - jwt.payload.nbf > 0 && jwt.payload.exp - Date.now() / 1000 <= 2 * 60 * 60 + 5);
+    check('students cannot read the LiveKit secret',
+      Boolean(await fails(db, `select private.livekit_secret('livekit_api_secret')`)));
+  });
+  await as(db, diya, async () => {
+    const grant = (await one(db, `select public.call_token(p_call => $1) as g`, [liveCall])).g;
+    check('the other person in the chat can join the call', decodeJwt(grant.token).payload.sub === diya);
+  });
+  await as(db, kabir, async () => {
+    check('outsiders cannot get a token for someone else\'s call',
+      Boolean(await fails(db, `select public.call_token(p_call => $1)`, [liveCall])));
+  });
+  await as(db, aarav, async () => {
+    await db.query(`select public.update_call($1, 'ended')`, [liveCall]);
+    check('ended calls cannot be joined', Boolean(await fails(db, `select public.call_token(p_call => $1)`, [liveCall])));
+    const room = (await one(db, `select public.call_token(p_room => $1) as g`, [general.id])).g;
+    check('community members can join a room call', decodeJwt(room.token).payload.video.room === `room-${general.id}`);
+  });
+  const roomOutsider = (await one(db,
+    `select u.id from (select unnest($1::uuid[]) as id) u
+     where not exists (select 1 from public.conversation_members m where m.conversation_id = $2 and m.user_id = u.id)
+     limit 1`, [[aarav, diya, kabir], general.conversation_id]))?.id;
+  if (roomOutsider) {
+    await as(db, roomOutsider, async () => {
+      check('non-members cannot join a room call', Boolean(await fails(db, `select public.call_token(p_room => $1)`, [general.id])));
+    });
+  }
+  await db.query(`update public.profiles set is_private = true where id = $1`, [diya]);
+  await as(db, diya, async () => {
+    const room = (await one(db, `select public.call_token(p_room => $1) as g`, [general.id])).g;
+    const payload = decodeJwt(room.token).payload;
+    check('private profiles join room calls anonymously',
+      payload.sub.startsWith('anon-') && payload.name.startsWith('anonymous_') && payload.sub !== diya, JSON.stringify(payload));
+  });
+  await db.query(`update public.profiles set is_private = false where id = $1`, [diya]);
+
   // Blocking ---------------------------------------------------------------
   await as(db, diya, async () => {
     await db.query(`insert into public.blocks (blocker_id, blocked_id) values ($1, $2)`, [diya, aarav]);
@@ -674,6 +751,7 @@ async function runScenarios(db) {
   await db.query(`select set_config('request.jwt.claims', '', false)`);
   await db.exec('set role anon');
   check('signed-out requests cannot call RPCs', Boolean(await fails(db, `select public.home_feed()`)));
+  check('signed-out requests cannot get call tokens', Boolean(await fails(db, `select public.call_token(p_room => gen_random_uuid())`)));
   const anonPosts = await fails(db, `select id from public.posts`);
   check('signed-out requests see no posts', anonPosts !== null || (await rows(db, 'select id from public.posts')).length === 0);
   await db.exec('reset role');

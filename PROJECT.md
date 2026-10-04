@@ -45,8 +45,8 @@
 | Web build, served on your Wi-Fi for phone testing | **Done**: `http://<PC Wi-Fi IP>:8080` while the server runs |
 | Community roles and permissions (custom roles, ranks, 10 permissions) | **Done and live** (section 4, item 15) |
 | Private profiles and anonymous posting | **Done and live** (section 4, item 16) |
-| Automated checks | 112 database checks pass; headless-browser screenshots of every main screen |
-| Voice/video calls | **Built, not yet tested between two real devices** |
+| Automated checks | 124 database checks pass; two-browser LiveKit call tests; headless-browser screenshots of every main screen |
+| Voice/video calls | **On LiveKit Cloud**; 1:1 and room calls tested between two browsers; not yet tried between two phones |
 | Android APK | **Built and installed** on a Realme phone over USB (section 2D) |
 | iOS build | **Not built**: needs a Mac with Xcode |
 | Push notifications (phone lock screen) | **Not built**: in-app realtime notifications only |
@@ -244,11 +244,21 @@ Legend: ✅ done · 🟡 partly done or untested · ❌ not done
 
 | Requirement | State |
 |---|---|
-| One-to-one voice and video | 🟡 built (WebRTC + Supabase Realtime signaling); **not yet tested between two real devices** |
-| Group voice and video | 🟡 built as a mesh (good for about 6 people); untested |
-| Incoming call screen (accept/decline), missed-call notification | 🟡 built; untested |
-| Mute, camera on/off, flip camera | 🟡 built |
-| Works on every network | ❌ needs a TURN server for strict networks (see section 5) |
+| One-to-one voice and video | ✅ on **LiveKit Cloud**; tested end to end between two browsers (dial → rings on the other side → accept → connected → hang up closes both) |
+| Group voice and video, room voice/video | ✅ LiveKit routes the media (an SFU), so calls scale past a handful of people; room call tested with two people, voice and video |
+| Incoming call screen (accept/decline), missed-call notification | ✅ |
+| Mute, camera on/off, flip camera, speakerphone | ✅ (flip and speaker on phones only) |
+| Who's talking | ✅ room calls show everyone with a green ring around whoever is speaking |
+| Works on every network | ✅ LiveKit Cloud provides TURN |
+| Private profiles in room calls | ✅ join under a random `anonymous_…` name |
+| Tested on real phones | 🟡 Android APK built with LiveKit; a call between two physical phones hasn't been tried yet |
+
+How it works: the app asks the database function `call_token` for a LiveKit
+token. The function checks that you're in that call's chat (and the call is
+still ringing or ongoing), or a member of that room's community, then signs a
+2-hour token with the LiveKit API secret. The secret lives in **Supabase
+Vault**; it is never in the app or in git. The app then connects to
+`wss://quad-lykk9pp8.livekit.cloud` with that token.
 
 ### 7. Rooms
 
@@ -416,8 +426,8 @@ How anonymity works:
 
 In priority order:
 
-1. **Test calls on two real devices.** The WebRTC code is complete but has only been compiled, not run in a live two-person call.
-2. **TURN server for calls.** Direct calls fail on some mobile and college networks. Add a TURN service (Twilio, Metered or self-hosted coturn) and put it in `app/env/dev.json` as `TURN_URL`, `TURN_USERNAME` and `TURN_CREDENTIAL`. The app already reads these.
+1. **Try a call between two phones.** LiveKit calls work between two browsers (tested); try phone to phone, and phone to browser.
+2. **Calls while the app is closed.** An incoming call only rings while the app is open. Ringing a locked phone needs push notifications (item 4) plus CallKit/ConnectionService.
 3. **iOS build.** Needs a Mac with Xcode (the `Info.plist` permission texts are already in place). Android is done.
 4. **Push notifications** (Firebase Cloud Messaging, plus a Supabase Edge Function that sends a push when a notification row is inserted).
 5. **Reel processing.** Videos play as uploaded. Later: compression, HLS streaming and auto-thumbnails (for example with Mux or Cloudflare Stream).
@@ -431,7 +441,7 @@ In priority order:
    - Group chat photo and rename (backend allows it; no UI yet).
 8. **Platform admin screen** for reviewing reports outside communities (profile posts, DMs, users).
 9. **College email verification** to grant the verified badge automatically.
-10. **Automated app tests.** The database has 112 tests; the Flutter app has no unit or widget tests yet (the template test was removed because it tested the counter demo).
+10. **Automated app tests.** The database has 124 tests; the Flutter app has no unit or widget tests yet (the template test was removed because it tested the counter demo).
 11. **Theme choice is not remembered** between app launches (it resets to "Match my phone").
 12. **App name, logo and icons.** "Quad" is a placeholder name. The launcher icon and web favicon are still Flutter's defaults.
 
@@ -443,7 +453,8 @@ In priority order:
   - Project Settings → API Keys → create a new secret key and revoke the old one.
   - Project Settings → Database → reset the password.
   - Then put the new values in the root `.env` file.
-- **Never commit** `lookme.md` (it has secrets), `.env`, or `app/env/dev.json`. `.gitignore` excludes all three. `SPEC.md` is the credential-free copy of the brief that lives in the repo.
+- **LiveKit secret.** It was in `livelykitenv.md` and was read during this work; it now lives in the root `.env` and Supabase Vault only. To rotate it, see section 13 (Calls).
+- **Never commit** `lookme.md` (it has secrets), `livelykitenv.md` (LiveKit keys), `.env`, or `app/env/dev.json`. `.gitignore` excludes all four. `SPEC.md` is the credential-free copy of the brief that lives in the repo.
 - The app only contains the **publishable** key, which is designed to be public. Every table is protected by Row Level Security, so the publishable key alone can't read or change anything a signed-in student isn't allowed to.
 - The secret key and database password are used only by the scripts in `tools/`, read from the root `.env`.
 - Chat attachments are in a **private** bucket and are only readable by members of that conversation, through links that expire after an hour.
@@ -535,7 +546,7 @@ Line counts are approximate.
 
 | File | Lines | What it contains |
 |---|---|---|
-| `core/config/env.dart` | 15 | Build-time settings: Supabase URL and publishable key, optional TURN server, a flag used by automated UI checks. |
+| `core/config/env.dart` | 14 | Build-time settings: Supabase URL and publishable key, and a flag used by automated UI checks. (LiveKit's URL comes from the database with each call token.) |
 
 ### 9.3 core/data (shared data plumbing)
 
@@ -686,8 +697,8 @@ Routes: `/splash /welcome /sign-in /sign-up /forgot-password /onboarding`, tabs 
 
 | File | Lines | What it contains |
 |---|---|---|
-| `calls/call_service.dart` | 272 | `IncomingCall` (listens for ringing calls), `startCall`, and `CallSession`: the WebRTC engine. It joins a private realtime channel, finds peers by presence, exchanges offers/answers/ICE over broadcast, connects everyone in a mesh, and handles mute, camera, flip camera and leave. |
-| `calls/ui/call_screen.dart` | 310 | Call screen for 1:1/group calls and room voice/video: incoming (Accept/Decline), ringing with a 45 s timeout that marks missed calls, live timer, video grid or avatars, self-view, controls. |
+| `calls/call_service.dart` | 213 | `IncomingCall` (listens for ringing calls), `startCall`, and `CallSession`: gets a token from `call_token`, connects to LiveKit, turns on the mic (and camera for video calls), and handles mute, camera, flip camera, speakerphone and leave. `participantRef` and `cameraOf` helpers for the UI. |
+| `calls/ui/call_screen.dart` | 537 | Call screen for 1:1/group calls and room voice/video: incoming (Accept/Decline), ringing with a 45 s timeout that marks missed calls, live timer, full-screen or grid video, self-view, room voice grid with speaking rings, permission warnings, controls. |
 | `calls/ui/room_voice_bar.dart` | 48 | Bar at the top of a room with Voice and Video buttons. |
 
 ### 9.18 features/profile
@@ -776,8 +787,9 @@ Each migration is applied once, in order, and recorded in `supabase_migrations.s
 | `migrations/20261004000100_community_roles.sql` | Custom community roles. Tables `community_roles` (name, colour, position, permissions) and `community_member_roles`. Helpers `has_permission`, `my_permissions`, `member_rank`, `my_rank`; every older "is moderator/admin" check now asks for a specific permission. Default Admin and Moderator roles for every community (existing staff moved onto them). RPCs `create_community_role`, `update_community_role`, `delete_community_role`, `set_member_roles`; `set_member_status` and `remove_member` now check permissions and rank (`set_member_role` removed). `community_details` gains `my_permissions` and `my_rank`. |
 | `migrations/20261004000200_private_profiles_anonymity.sql` | `profiles.is_private`; `is_anonymous` and `anon_name` on posts, comments and messages; table `message_authors`. Hides the author columns from students, adds alias triggers (fresh `anonymous_<adjective>_<animal>_<number>` each time), `can_see_profile` (private profiles visible to people they follow), privacy rules for posts, follows, achievements, reactions and guest lists, and rebuilt `profile_summaries`, `post_details`, `comment_details`, `report_details` and notification triggers that never leak the real author. |
 | `migrations/20261004000300_create_post_anonymous.sql` | `create_post` gains `p_is_anonymous`. |
+| `migrations/20261004000400_livekit_calls.sql` | `public.call_token(p_call, p_room)`: checks you may join, then builds and signs a LiveKit JWT inside Postgres (`pgcrypto` HMAC-SHA256) with the secret from Supabase Vault. Helpers `private.base64url`, `private.livekit_secret`, `private.livekit_jwt` (the last two can't be called by students). |
 | `seed.sql` | 50 Indian colleges (IITs, NITs, IIITs, BITS, VIT, SRM, Anna University, DU, JNU…) with city, state, type and founding year. Safe to re-run. |
-| `setup.sql` | All 14 migrations plus the seed in one file, for pasting into the Supabase SQL editor on a brand-new project. |
+| `setup.sql` | All 15 migrations plus the seed in one file, for pasting into the Supabase SQL editor on a brand-new project. (Calls also need `npm run livekit:setup`.) |
 
 ---
 
@@ -786,9 +798,10 @@ Each migration is applied once, in order, and recorded in `supabase_migrations.s
 | File | What it contains |
 |---|---|
 | `tools/package.json` | Scripts `db:check`, `db:migrate`, `db:seed-demo`; dependencies `@electric-sql/pglite`, `pg`, `@supabase/supabase-js`. |
-| `tools/db-check.mjs` | Runs every migration in an **in-memory Postgres** (PGlite) with stand-ins for Supabase's auth, storage and realtime, then 112 checks acting as real students (RLS isolation, private communities, waitlists, hidden meeting links, chat unread counts, blocking, reports, rate limits, rankings, role permissions and ranks, anonymous posts/comments/room messages, private profiles…). Never touches your real database. |
+| `tools/db-check.mjs` | Runs every migration in an **in-memory Postgres** (PGlite) with stand-ins for Supabase's auth, storage and realtime, then 124 checks acting as real students (RLS isolation, private communities, waitlists, hidden meeting links, chat unread counts, blocking, reports, rate limits, rankings, role permissions and ranks, anonymous posts/comments/room messages, private profiles, LiveKit call tokens…). Never touches your real database. |
 | `tools/db.mjs` | Connects to your Supabase Postgres from `.env` (direct connection, or finds the pooler region automatically). |
 | `tools/db-migrate.mjs` | Applies new migrations in order (each once), runs `seed.sql`, and tells the API to reload the schema. |
+| `tools/livekit-setup.mjs` | Copies `LIVEKIT_URL`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` from the root `.env` into Supabase Vault (`npm run livekit:setup`). Run again after rotating the LiveKit key. |
 | `tools/seed-demo.mjs` | Deletes and recreates the demo data (6 students, 7 communities, 5 extra rooms, 6 events, 16 posts incl. poll/photos/reels, comments, reactions, achievements, 2 DMs, 1 group, room messages). |
 | `.env` | Supabase URL, publishable key, **secret key** and **DB password** for the tools (git-ignored). |
 | `.gitignore` | Ignores `.env`, `app/env/*.json` (except the example) and `tools/node_modules`. |
@@ -878,11 +891,23 @@ Colleges with no students on Quad aren't ranked; fewer than 10 students shows "l
 | `user:<your id>` (private) | Your inbox: chat list changes, new notifications, calls ringing |
 | `chat:<conversation id>` (private) | New/edited messages (Postgres changes) and typing indicators (broadcast) |
 | `online` (private, presence) | Who's online (green dots, "Online" in chat headers) |
-| `call:<call id>` (private) | WebRTC signaling for 1:1 and group calls |
-| `voice:<room id>` (private) | WebRTC signaling for room voice/video |
+| `call:<call id>`, `voice:<room id>` (private) | No longer used (calls moved to LiveKit); still authorized, harmless |
 | Tables in the realtime publication | `messages`, `conversations`, `conversation_members`, `notifications`, `calls` |
 
 Private channels are authorized by `private.can_use_topic()`: you can only join chat and call channels for conversations you're in.
+
+### Calls (LiveKit Cloud)
+
+| LiveKit room | Who can get a token |
+|---|---|
+| `call-<call id>` | Members of the call's chat, while the call is ringing or ongoing |
+| `room-<room id>` | Members of the room's community (private profiles join anonymously) |
+
+The LiveKit URL, API key and API secret are stored in **Supabase Vault**
+(`livekit_url`, `livekit_api_key`, `livekit_api_secret`) by
+`npm run livekit:setup`, which reads them from the root `.env`. To rotate the
+LiveKit key: create a new key in the LiveKit dashboard, update `.env`, run
+`npm run livekit:setup` again. No app rebuild is needed.
 
 ### Storage buckets
 
@@ -921,10 +946,12 @@ The goal was an app that looks designed, not generated: strong type, one confide
 
 | Check | Result |
 |---|---|
-| `npm run db:check`: all migrations in an in-memory Postgres + 112 behaviour checks | **112 passed, 0 failed** |
-| Migrations applied to your Supabase project | 14/14 applied |
+| `npm run db:check`: all migrations in an in-memory Postgres + 124 behaviour checks | **124 passed, 0 failed** |
+| Migrations applied to your Supabase project | 15/15 applied |
 | Demo login and key functions against your real project (Node script) | Login OK; feed, chat list and rankings return data. Roles: member lists with roles, role counts, create/update/delete role and the duplicate-name error all work through the real API |
 | Roles and anonymity screens in headless Chrome (as Aarav) | Manage tabs, Roles tab, role actions, members with Owner chip, member role picker, room hint, composer with all communities and the anonymous switch, Settings privacy switch; no console errors |
+| LiveKit calls (two headless Chrome windows with fake camera/mic, as Aarav and Diya) | Room voice and room video: both connected, LiveKit Cloud listed both with 1 and 2 tracks. 1:1 call: Diya's app rang on its own, Accept connected both, hanging up marked the call ended and closed Diya's screen. A token minted by the database was also accepted by LiveKit's own JS SDK. |
+| Android build with LiveKit | APK built and installed on the phone; app starts with no crash in the log |
 | Bug found this way and fixed | The composer's "Post to" sheet listed no communities if opened before they had loaded (same fix in the event editor) |
 | `flutter analyze` | **0 errors, 0 warnings** (24 style hints) |
 | `flutter build web --release` | Builds successfully |
@@ -948,7 +975,8 @@ Not verified yet: two-device calls, native Android/iOS builds, and reel playback
 | **Views returning "my state"** | One query per list instead of N+1 lookups for "did I like this?". |
 | **Reels are posts with type `reel`** | Likes, comments, saves, shares, reports and search work for reels with no extra code. |
 | **Rooms are conversations** | One chat engine for DMs, groups and rooms; room membership follows community membership through triggers. |
-| **Mesh WebRTC over Supabase Realtime** | Calls with no extra paid service. For bigger calls, switch to an SFU such as LiveKit (see section 18). |
+| **LiveKit Cloud for calls** (replaced the first version's mesh WebRTC) | Media goes through LiveKit's servers, so group and room calls scale, TURN is included, and the app gets speaking indicators and adaptive video for free. |
+| **Call tokens signed inside Postgres** | No separate token server or Edge Function to deploy: `call_token` checks membership with the same rules as everything else and signs with the secret from Vault. |
 | **Generated posters** | Most student events don't have a designer; four typographic styles make every event look good by default. |
 | **Rankings = activity on Quad only** | Transparent and computable from real data; no claims about academic quality. |
 | **Hash URLs on web (`/#/post/…`)** | Works with any static server (no rewrite rules needed) for LAN testing. |
@@ -988,7 +1016,7 @@ Adding a database change: create `supabase/migrations/<timestamp>_<name>.sql` (e
 2. Rotate the Supabase secret key and DB password (section 6).
 3. Try roles with two accounts: as an owner create a role with only "Manage rooms", give it to someone, and check they can edit rooms but not ban people.
 4. Turn on Private profile on one account and check that its comments and room messages show up anonymously for another account.
-5. Try a voice and a video call between two devices; add a TURN server if they don't connect.
+5. Try a voice and a video call between two phones (and a phone and a browser).
 
 **Next**
 
@@ -1000,7 +1028,7 @@ Adding a database change: create `supabase/migrations/<timestamp>_<name>.sql` (e
 **When the user base grows**
 
 - Move chat fan-out from "Postgres changes" to Supabase "Broadcast from Database" (cheaper at scale).
-- Move group calls and room voice to an SFU (LiveKit) instead of a mesh.
+- Use LiveKit webhooks to show "N in voice" on rooms and to end calls when everyone leaves.
 - Precompute the For-you feed per user (e.g. a materialized table refreshed by a job) instead of ranking on every request.
 - Add a CDN video pipeline (Mux / Cloudflare Stream) for reels.
 - Turn `college_stats` refresh into an incremental job.

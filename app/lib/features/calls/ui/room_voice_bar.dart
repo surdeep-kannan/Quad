@@ -18,7 +18,10 @@ class RoomVoiceBar extends StatelessWidget {
     final c = context.colors;
     return Container(
       padding: const EdgeInsets.fromLTRB(Space.gutter, 8, 10, 8),
-      decoration: BoxDecoration(color: c.surfaceMuted, border: Border(bottom: BorderSide(color: c.line))),
+      decoration: BoxDecoration(
+        color: c.surfaceMuted,
+        border: Border(bottom: BorderSide(color: c.line)),
+      ),
       child: Row(
         children: [
           Icon(AppIcons.waveform, size: 18, color: c.success),

@@ -6,7 +6,8 @@
   "scripts": {
     "db:check": "node db-check.mjs",
     "db:migrate": "node --env-file=../.env db-migrate.mjs",
-    "db:seed-demo": "node --env-file=../.env seed-demo.mjs"
+    "db:seed-demo": "node --env-file=../.env seed-demo.mjs",
+    "livekit:setup": "node --env-file=../.env livekit-setup.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8",

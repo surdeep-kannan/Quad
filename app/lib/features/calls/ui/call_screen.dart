@@ -1,8 +1,9 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:livekit_client/livekit_client.dart' as lk;
 import 'package:material_ui/material_ui.dart';
 
 import '../../../core/data/realtime.dart';
@@ -13,6 +14,7 @@ import '../../../core/widgets/app_icons.dart';
 import '../../../core/widgets/avatars.dart';
 import '../../chat/data/chat_models.dart';
 import '../../chat/data/chat_repository.dart';
+import '../../communities/providers.dart';
 import '../call_service.dart';
 
 /// A 1:1 or group call ([callId]) or a community room's voice/video ([roomId]).
@@ -50,7 +52,7 @@ class _CallScreenState extends ConsumerState<CallScreen> {
   Future<void> _load() async {
     final repo = ref.read(chatRepositoryProvider);
     if (_isRoom) {
-      await _join(video: widget.video, topic: 'voice:${widget.roomId}');
+      await _join(video: widget.video);
       return;
     }
     final call = await repo.call(widget.callId!);
@@ -70,7 +72,7 @@ class _CallScreenState extends ConsumerState<CallScreen> {
     });
     if (call.status == 'ended' || call.status == 'missed' || call.status == 'declined') return _close();
     if (!_ringing) {
-      await _join(video: call.isVideo, topic: 'call:${call.id}');
+      await _join(video: call.isVideo);
       if (widget.outgoing) {
         _noAnswer = Timer(const Duration(seconds: 45), () {
           if (!(_session?.anyoneConnected ?? false)) {
@@ -82,8 +84,13 @@ class _CallScreenState extends ConsumerState<CallScreen> {
     }
   }
 
-  Future<void> _join({required bool video, required String topic}) async {
-    final session = CallSession(client: ref.read(supabaseProvider), topic: topic, video: video);
+  Future<void> _join({required bool video}) async {
+    final session = CallSession(
+      repo: ref.read(chatRepositoryProvider),
+      callId: widget.callId,
+      roomId: widget.roomId,
+      video: video,
+    );
     session.addListener(_onSession);
     setState(() => _session = session);
     await session.join();
@@ -94,7 +101,10 @@ class _CallScreenState extends ConsumerState<CallScreen> {
     if (session == null || !mounted) return;
     if (session.anyoneConnected && _clock == null) {
       _noAnswer?.cancel();
-      _clock = Timer.periodic(const Duration(seconds: 1), (_) => setState(() => _elapsed += const Duration(seconds: 1)));
+      _clock = Timer.periodic(
+        const Duration(seconds: 1),
+        (_) => setState(() => _elapsed += const Duration(seconds: 1)),
+      );
       final call = _call;
       if (call != null && call.status == 'ringing') {
         unawaited(ref.read(chatRepositoryProvider).updateCall(call.id, 'ongoing').catchError((_) {}));
@@ -108,7 +118,7 @@ class _CallScreenState extends ConsumerState<CallScreen> {
     ref.read(incomingCallProvider.notifier).clear();
     setState(() => _ringing = false);
     unawaited(ref.read(chatRepositoryProvider).updateCall(call.id, 'ongoing').catchError((_) {}));
-    await _join(video: call.isVideo, topic: 'call:${call.id}');
+    await _join(video: call.isVideo);
   }
 
   Future<void> _decline() async {
@@ -119,9 +129,12 @@ class _CallScreenState extends ConsumerState<CallScreen> {
 
   Future<void> _hangUp() async {
     final call = _call;
-    final alone = (_session?.peers.length ?? 0) <= 1;
+    final alone = (_session?.remote.length ?? 0) <= 1;
     if (call != null && alone) {
-      await ref.read(chatRepositoryProvider).updateCall(call.id, _session?.anyoneConnected ?? false ? 'ended' : 'missed').catchError((_) {});
+      await ref
+          .read(chatRepositoryProvider)
+          .updateCall(call.id, _session?.anyoneConnected ?? false ? 'ended' : 'missed')
+          .catchError((_) {});
     }
     _close();
   }
@@ -146,7 +159,10 @@ class _CallScreenState extends ConsumerState<CallScreen> {
   }
 
   String get _title {
-    if (_isRoom) return 'Room call';
+    if (_isRoom) {
+      final room = ref.watch(roomProvider(widget.roomId!)).value;
+      return room == null ? 'Room call' : '#${room.name}';
+    }
     final me = ref.read(currentUserIdProvider);
     final others = _people.values.where((p) => p.id != me).toList();
     if (others.length == 1) return others.first.fullName;
@@ -161,7 +177,7 @@ class _CallScreenState extends ConsumerState<CallScreen> {
     if (session.anyoneConnected) {
       final m = _elapsed.inMinutes.toString().padLeft(2, '0');
       final s = (_elapsed.inSeconds % 60).toString().padLeft(2, '0');
-      return '$m:$s';
+      return _isRoom ? '${session.remote.length + 1} here · $m:$s' : '$m:$s';
     }
     return _isRoom ? 'Waiting for others to join' : 'Ringing…';
   }
@@ -173,49 +189,73 @@ class _CallScreenState extends ConsumerState<CallScreen> {
     final others = _people.values.where((p) => p.id != me).toList();
     final hero = others.isEmpty ? null : others.first;
     final video = session?.video ?? false;
-    final remote = session?.peers.values.toList() ?? const <Peer>[];
+    final remote = session?.remote ?? const <lk.RemoteParticipant>[];
+    final top = MediaQuery.paddingOf(context).top;
+
+    final Widget stage;
+    if (video && remote.isNotEmpty) {
+      stage = Positioned.fill(
+        child: _VideoGrid(participants: remote, people: _people),
+      );
+    } else if (_isRoom && session != null && session.joined) {
+      stage = Positioned.fill(
+        child: _VoiceGrid(session: session, people: _people, title: _title, status: _status),
+      );
+    } else {
+      stage = Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            UserAvatar(name: hero?.fullName ?? _title, url: hero?.avatarUrl, size: 112),
+            const SizedBox(height: 20),
+            Text(
+              _title,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 26,
+                fontFamily: AppFonts.display,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(_status, style: const TextStyle(color: Colors.white70, fontSize: 15)),
+            if (remote.length > 1) ...[
+              const SizedBox(height: 18),
+              Wrap(
+                spacing: 10,
+                children: [
+                  for (final participant in remote) AuthorAvatar(user: participantRef(participant, _people), size: 44),
+                ],
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+
+    final localTrack = session?.local == null ? null : cameraOf(session!.local!);
 
     return Scaffold(
       backgroundColor: const Color(0xFF0E0E11),
       body: Stack(
         children: [
-          if (video && remote.isNotEmpty)
-            Positioned.fill(child: _VideoGrid(peers: remote, people: _people))
-          else
-            Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  UserAvatar(name: hero?.fullName ?? _title, url: hero?.avatarUrl, size: 112),
-                  const SizedBox(height: 20),
-                  Text(_title, style: const TextStyle(color: Colors.white, fontSize: 26, fontFamily: AppFonts.display, fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 8),
-                  Text(_status, style: const TextStyle(color: Colors.white70, fontSize: 15)),
-                  if (remote.length > 1) ...[
-                    const SizedBox(height: 18),
-                    Wrap(
-                      spacing: 10,
-                      children: [
-                        for (final peer in remote)
-                          UserAvatar(name: _people[peer.userId]?.fullName ?? 'Guest', url: _people[peer.userId]?.avatarUrl, size: 44),
-                      ],
-                    ),
-                  ],
-                ],
-              ),
-            ),
+          stage,
           if (video && session != null && !_ringing)
             Positioned(
               right: 16,
-              top: MediaQuery.paddingOf(context).top + 16,
+              top: top + 16,
               width: 110,
               height: 150,
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(16),
                 child: ColoredBox(
                   color: Colors.black,
-                  child: session.cameraOn
-                      ? RTCVideoView(session.localRenderer, mirror: true, objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover)
+                  child: session.cameraOn && localTrack != null
+                      ? lk.VideoTrackRenderer(
+                          localTrack,
+                          fit: lk.VideoViewFit.cover,
+                          mirrorMode: lk.VideoViewMirrorMode.mirror,
+                        )
                       : const Center(child: Icon(AppIcons.videoOff, color: Colors.white54)),
                 ),
               ),
@@ -223,8 +263,26 @@ class _CallScreenState extends ConsumerState<CallScreen> {
           if (video && remote.isNotEmpty)
             Positioned(
               left: 20,
-              top: MediaQuery.paddingOf(context).top + 20,
-              child: Text(_status, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, shadows: [Shadow(blurRadius: 8)])),
+              top: top + 20,
+              child: Text(
+                _status,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  shadows: [Shadow(blurRadius: 8)],
+                ),
+              ),
+            ),
+          if (session?.warning != null)
+            Positioned(
+              left: 20,
+              right: 20,
+              bottom: MediaQuery.paddingOf(context).bottom + 130,
+              child: Text(
+                session!.warning!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Color(0xFFFFB4A6), fontSize: 13),
+              ),
             ),
           Positioned(
             left: 0,
@@ -234,8 +292,18 @@ class _CallScreenState extends ConsumerState<CallScreen> {
                 ? Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
-                      _RoundButton(icon: AppIcons.phoneOff, label: 'Decline', color: const Color(0xFFE5383B), onTap: _decline),
-                      _RoundButton(icon: AppIcons.phoneFill, label: 'Accept', color: const Color(0xFF22B45E), onTap: _accept),
+                      _RoundButton(
+                        icon: AppIcons.phoneOff,
+                        label: 'Decline',
+                        color: const Color(0xFFE5383B),
+                        onTap: _decline,
+                      ),
+                      _RoundButton(
+                        icon: AppIcons.phoneFill,
+                        label: 'Accept',
+                        color: const Color(0xFF22B45E),
+                        onTap: _accept,
+                      ),
                     ],
                   )
                 : Row(
@@ -254,9 +322,22 @@ class _CallScreenState extends ConsumerState<CallScreen> {
                           active: !(session?.cameraOn ?? true),
                           onTap: session?.toggleCamera,
                         ),
-                        _RoundButton(icon: AppIcons.flipCamera, label: 'Flip', onTap: session?.switchCamera),
+                        if (!kIsWeb)
+                          _RoundButton(icon: AppIcons.flipCamera, label: 'Flip', onTap: session?.switchCamera),
                       ],
-                      _RoundButton(icon: AppIcons.phoneOff, label: 'End', color: const Color(0xFFE5383B), onTap: _hangUp),
+                      if (!kIsWeb)
+                        _RoundButton(
+                          icon: AppIcons.speaker,
+                          label: 'Speaker',
+                          active: session?.speakerOn ?? false,
+                          onTap: session?.toggleSpeaker,
+                        ),
+                      _RoundButton(
+                        icon: AppIcons.phoneOff,
+                        label: _isRoom ? 'Leave' : 'End',
+                        color: const Color(0xFFE5383B),
+                        onTap: _hangUp,
+                      ),
                     ],
                   ),
           ),
@@ -266,38 +347,153 @@ class _CallScreenState extends ConsumerState<CallScreen> {
   }
 }
 
-class _VideoGrid extends StatelessWidget {
-  const _VideoGrid({required this.peers, required this.people});
+/// Room voice: everyone's avatar, with a ring around whoever is talking.
+class _VoiceGrid extends StatelessWidget {
+  const _VoiceGrid({required this.session, required this.people, required this.title, required this.status});
 
-  final List<Peer> peers;
+  final CallSession session;
+  final Map<String, UserRef> people;
+  final String title;
+  final String status;
+
+  @override
+  Widget build(BuildContext context) {
+    final everyone = <lk.Participant>[?session.local, ...session.remote];
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 140),
+        child: Column(
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 24,
+                fontFamily: AppFonts.display,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(status, style: const TextStyle(color: Colors.white70, fontSize: 14)),
+            const SizedBox(height: 28),
+            Expanded(
+              child: SingleChildScrollView(
+                child: Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 18,
+                  runSpacing: 20,
+                  children: [
+                    for (final participant in everyone)
+                      _VoiceTile(
+                        person: participantRef(participant, people),
+                        speaking: participant.isSpeaking,
+                        muted: participant is lk.LocalParticipant ? !session.micOn : participant.isMuted,
+                        isMe: participant is lk.LocalParticipant,
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _VoiceTile extends StatelessWidget {
+  const _VoiceTile({required this.person, required this.speaking, required this.muted, required this.isMe});
+
+  final UserRef person;
+  final bool speaking;
+  final bool muted;
+  final bool isMe;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 84,
+      child: Column(
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: speaking ? const Color(0xFF22B45E) : Colors.transparent, width: 3),
+                ),
+                child: AuthorAvatar(user: person, size: 64),
+              ),
+              if (muted)
+                Positioned(
+                  right: -2,
+                  bottom: -2,
+                  child: Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: const BoxDecoration(color: Color(0xFF2A2A31), shape: BoxShape.circle),
+                    child: const Icon(AppIcons.micOff, size: 13, color: Colors.white70),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            isMe ? '${person.firstName} (you)' : person.firstName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _VideoGrid extends StatelessWidget {
+  const _VideoGrid({required this.participants, required this.people});
+
+  final List<lk.RemoteParticipant> participants;
   final Map<String, UserRef> people;
 
   @override
   Widget build(BuildContext context) {
-    Widget tile(Peer peer) => Stack(
-          fit: StackFit.expand,
-          children: [
-            ColoredBox(
-              color: const Color(0xFF1B1B20),
-              child: peer.hasVideo
-                  ? RTCVideoView(peer.renderer, objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover)
-                  : Center(child: UserAvatar(name: people[peer.userId]?.fullName ?? 'Guest', url: people[peer.userId]?.avatarUrl, size: 72)),
+    final single = participants.length == 1;
+    Widget tile(lk.RemoteParticipant participant) {
+      final person = participantRef(participant, people);
+      final camera = cameraOf(participant);
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          ColoredBox(
+            color: const Color(0xFF1B1B20),
+            child: camera != null
+                ? lk.VideoTrackRenderer(camera, fit: lk.VideoViewFit.cover)
+                : Center(child: AuthorAvatar(user: person, size: 72)),
+          ),
+          Positioned(
+            left: single ? 20 : 10,
+            // Full-screen video: keep the name clear of the call buttons.
+            bottom: single ? MediaQuery.paddingOf(context).bottom + 140 : 10,
+            child: Text(
+              person.firstName,
+              style: const TextStyle(color: Colors.white, shadows: [Shadow(blurRadius: 6)]),
             ),
-            Positioned(
-              left: 10,
-              bottom: 10,
-              child: Text(people[peer.userId]?.firstName ?? '', style: const TextStyle(color: Colors.white, shadows: [Shadow(blurRadius: 6)])),
-            ),
-          ],
-        );
-    if (peers.length == 1) return tile(peers.first);
+          ),
+        ],
+      );
+    }
+
+    if (single) return tile(participants.first);
     return GridView.count(
       crossAxisCount: 2,
       childAspectRatio: 0.75,
       padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top + 60),
       mainAxisSpacing: 2,
       crossAxisSpacing: 2,
-      children: [for (final peer in peers) tile(peer)],
+      children: [for (final participant in participants) tile(participant)],
     );
   }
 }
@@ -324,7 +520,12 @@ class _RoundButton extends StatelessWidget {
             onTap: onTap,
             child: SizedBox.square(
               dimension: 64,
-              child: Icon(icon, color: color == null && active ? Colors.black : Colors.white, size: 28, semanticLabel: label),
+              child: Icon(
+                icon,
+                color: color == null && active ? Colors.black : Colors.white,
+                size: 28,
+                semanticLabel: label,
+              ),
             ),
           ),
         ),

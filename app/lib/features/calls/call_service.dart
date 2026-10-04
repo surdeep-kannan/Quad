@@ -1,14 +1,15 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:livekit_client/livekit_client.dart' as lk;
 import 'package:material_ui/material_ui.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../core/config/env.dart';
 import '../../core/data/realtime.dart';
+import '../../core/data/refs.dart';
 import '../../core/data/supabase_providers.dart';
 import '../../core/utils/errors.dart';
 import '../../core/widgets/sheets.dart';
@@ -49,256 +50,164 @@ Future<void> startCall(BuildContext context, WidgetRef ref, String conversationI
   }
 }
 
-class Peer {
-  Peer(this.userId, this.connection, this.renderer);
-
-  final String userId;
-  final RTCPeerConnection connection;
-  final RTCVideoRenderer renderer;
-  RTCPeerConnectionState state = RTCPeerConnectionState.RTCPeerConnectionStateNew;
-  bool remoteDescriptionSet = false;
-  final List<RTCIceCandidate> pendingCandidates = [];
-  bool hasVideo = false;
-}
-
-/// A live audio/video session between everyone on one realtime topic.
-///
-/// Peers find each other through presence on a private channel and exchange
-/// offers, answers and ICE candidates over broadcast. Each pair connects
-/// directly (a mesh), which works well for calls of up to about six people.
+/// A live audio/video session on LiveKit, for a call ([callId]) or a
+/// community room ([roomId]). The database hands out the access token, so
+/// only people in the conversation or community can join.
 class CallSession extends ChangeNotifier {
-  CallSession({required SupabaseClient client, required this.topic, required this.video}) : _client = client;
+  CallSession({required ChatRepository repo, this.callId, this.roomId, required this.video}) : _repo = repo;
 
-  final SupabaseClient _client;
-
-  /// `call:<call id>` or `voice:<room id>`.
-  final String topic;
+  final ChatRepository _repo;
+  final String? callId;
+  final String? roomId;
   final bool video;
 
-  final localRenderer = RTCVideoRenderer();
-  final Map<String, Peer> peers = {};
-  MediaStream? _localStream;
-  RealtimeChannel? _channel;
+  final lk.Room room = lk.Room(
+    roomOptions: const lk.RoomOptions(
+      adaptiveStream: true,
+      dynacast: true,
+      defaultCameraCaptureOptions: lk.CameraCaptureOptions(params: lk.VideoParametersPresets.h540_169),
+    ),
+  );
+  lk.EventsListener<lk.RoomEvent>? _events;
+
   bool micOn = true;
   late bool cameraOn = video;
+  late bool speakerOn = video;
   bool joined = false;
   bool disposed = false;
+
+  /// Couldn't join at all.
   String? error;
 
-  String get _me => _client.uid;
-
-  Map<String, dynamic> get _config => {
-        'iceServers': [
-          {'urls': ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302']},
-          if (Env.turnUrl.isNotEmpty) {'urls': Env.turnUrl, 'username': Env.turnUsername, 'credential': Env.turnCredential},
-        ],
-        'sdpSemantics': 'unified-plan',
-      };
+  /// Joined, but something needs attention (such as a blocked microphone).
+  String? warning;
 
   Future<void> join() async {
     try {
-      await localRenderer.initialize();
-      _localStream = await navigator.mediaDevices.getUserMedia({
-        'audio': true,
-        'video': video ? {'facingMode': 'user', 'width': 640, 'height': 480} : false,
-      });
-      localRenderer.srcObject = _localStream;
+      final grant = await _repo.callToken(callId: callId, roomId: roomId);
+      if (disposed) return;
+      _events = room.createListener()..listen((_) => _notify());
+      room.addListener(_notify);
+      await room.connect(grant.url, grant.token);
+      if (disposed) {
+        await room.disconnect();
+        return;
+      }
+      joined = true;
+      // Browsers only play call audio after a tap; joining came from one.
+      if (kIsWeb && !room.canPlaybackAudio) await room.startAudio();
+    } on PostgrestException catch (e) {
+      error = friendlyError(e);
+      _notify();
+      return;
     } catch (e) {
-      error = video ? 'Allow camera and microphone access to join.' : 'Allow microphone access to join.';
-      notifyListeners();
+      debugPrint('Call connect failed: $e');
+      error = 'Couldn\'t connect the call. Check your connection.';
+      _notify();
       return;
     }
-
-    final channel = _client.channel(topic, opts: RealtimeChannelConfig(private: true, key: _me));
-    _channel = channel;
-    channel
-        .onBroadcast(event: 'signal', callback: _onSignal)
-        .onPresenceSync((_) => _syncPeers())
-        .subscribe((status, err) async {
-          if (status == RealtimeSubscribeStatus.subscribed) {
-            await channel.track({'video': video, 'joined_at': DateTime.now().toUtc().toIso8601String()});
-            joined = true;
-            _notify();
-          } else if (status == RealtimeSubscribeStatus.channelError) {
-            error = 'Couldn\'t connect the call. Check your connection.';
-            _notify();
-          }
-        });
     _notify();
-  }
 
-  List<String> get _present {
-    final channel = _channel;
-    if (channel == null) return const [];
-    return [for (final state in channel.presenceState()) state.key];
-  }
-
-  /// Connects to newcomers and drops people who left. The student with the
-  /// smaller id sends the offer, so two people never offer at once.
-  void _syncPeers() {
-    final present = _present.toSet();
-    for (final userId in present) {
-      if (userId == _me || peers.containsKey(userId)) continue;
-      if (_me.compareTo(userId) < 0) unawaited(_connect(userId, offer: true));
-    }
-    for (final userId in peers.keys.toList()) {
-      if (!present.contains(userId)) unawaited(_dropPeer(userId));
-    }
-    _notify();
-  }
-
-  Future<Peer> _connect(String userId, {required bool offer}) async {
-    final existing = peers[userId];
-    if (existing != null) return existing;
-    final connection = await createPeerConnection(_config);
-    final renderer = RTCVideoRenderer();
-    await renderer.initialize();
-    final peer = Peer(userId, connection, renderer);
-    peers[userId] = peer;
-
-    for (final track in _localStream?.getTracks() ?? const <MediaStreamTrack>[]) {
-      await connection.addTrack(track, _localStream!);
-    }
-    connection.onTrack = (event) {
-      if (event.streams.isNotEmpty) {
-        renderer.srcObject = event.streams.first;
-        if (event.track.kind == 'video') peer.hasVideo = true;
-        _notify();
-      }
-    };
-    connection.onIceCandidate = (candidate) {
-      _send(userId, {
-        'type': 'candidate',
-        'candidate': candidate.candidate,
-        'sdpMid': candidate.sdpMid,
-        'sdpMLineIndex': candidate.sdpMLineIndex,
-      });
-    };
-    connection.onConnectionState = (state) {
-      peer.state = state;
-      if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed) unawaited(_dropPeer(userId));
-      _notify();
-    };
-
-    if (offer) {
-      final description = await connection.createOffer();
-      await connection.setLocalDescription(description);
-      _send(userId, {'type': 'offer', 'sdp': description.sdp});
-    }
-    _notify();
-    return peer;
-  }
-
-  Future<void> _onSignal(Map<String, dynamic> payload) async {
-    if (payload['to'] != _me) return;
-    final from = payload['from'] as String?;
-    if (from == null) return;
     try {
-      switch (payload['type']) {
-        case 'offer':
-          final peer = await _connect(from, offer: false);
-          await peer.connection.setRemoteDescription(RTCSessionDescription(payload['sdp'] as String, 'offer'));
-          peer.remoteDescriptionSet = true;
-          await _flushCandidates(peer);
-          final answer = await peer.connection.createAnswer();
-          await peer.connection.setLocalDescription(answer);
-          _send(from, {'type': 'answer', 'sdp': answer.sdp});
-        case 'answer':
-          final peer = peers[from];
-          if (peer == null) return;
-          await peer.connection.setRemoteDescription(RTCSessionDescription(payload['sdp'] as String, 'answer'));
-          peer.remoteDescriptionSet = true;
-          await _flushCandidates(peer);
-        case 'candidate':
-          final candidate = RTCIceCandidate(
-            payload['candidate'] as String?,
-            payload['sdpMid'] as String?,
-            (payload['sdpMLineIndex'] as num?)?.toInt(),
-          );
-          final peer = peers[from] ?? await _connect(from, offer: false);
-          if (peer.remoteDescriptionSet) {
-            await peer.connection.addCandidate(candidate);
-          } else {
-            peer.pendingCandidates.add(candidate);
-          }
-        case 'bye':
-          await _dropPeer(from);
+      await room.localParticipant?.setMicrophoneEnabled(true);
+    } catch (_) {
+      micOn = false;
+      warning = 'Allow microphone access so others can hear you.';
+    }
+    if (video) {
+      try {
+        await room.localParticipant?.setCameraEnabled(true);
+      } catch (_) {
+        cameraOn = false;
+        warning ??= 'Allow camera access so others can see you.';
       }
-    } catch (e) {
-      debugPrint('call signal error: $e');
     }
-  }
-
-  Future<void> _flushCandidates(Peer peer) async {
-    for (final candidate in peer.pendingCandidates) {
-      await peer.connection.addCandidate(candidate);
-    }
-    peer.pendingCandidates.clear();
-  }
-
-  void _send(String to, Map<String, dynamic> payload) {
-    unawaited(_channel?.sendBroadcastMessage(event: 'signal', payload: {...payload, 'from': _me, 'to': to}));
-  }
-
-  Future<void> _dropPeer(String userId) async {
-    final peer = peers.remove(userId);
-    if (peer == null) return;
-    await peer.connection.close();
-    peer.renderer.srcObject = null;
-    await peer.renderer.dispose();
+    if (!kIsWeb) unawaited(lk.Hardware.instance.setSpeakerphoneOn(speakerOn).catchError((_) {}));
     _notify();
   }
 
-  void toggleMic() {
+  List<lk.RemoteParticipant> get remote => room.remoteParticipants.values.toList();
+
+  bool get anyoneConnected => room.remoteParticipants.isNotEmpty;
+
+  lk.LocalParticipant? get local => room.localParticipant;
+
+  Future<void> toggleMic() async {
     micOn = !micOn;
-    for (final track in _localStream?.getAudioTracks() ?? const <MediaStreamTrack>[]) {
-      track.enabled = micOn;
+    _notify();
+    try {
+      await room.localParticipant?.setMicrophoneEnabled(micOn);
+      if (micOn) warning = null;
+    } catch (_) {
+      micOn = false;
+      warning = 'Allow microphone access so others can hear you.';
     }
     _notify();
   }
 
-  void toggleCamera() {
+  Future<void> toggleCamera() async {
     cameraOn = !cameraOn;
-    for (final track in _localStream?.getVideoTracks() ?? const <MediaStreamTrack>[]) {
-      track.enabled = cameraOn;
+    _notify();
+    try {
+      await room.localParticipant?.setCameraEnabled(cameraOn);
+    } catch (_) {
+      cameraOn = false;
+      warning = 'Allow camera access so others can see you.';
     }
     _notify();
   }
 
   Future<void> switchCamera() async {
-    final track = _localStream?.getVideoTracks().firstOrNull;
-    if (track != null) await Helper.switchCamera(track);
+    final track = room.localParticipant?.videoTrackPublications.firstOrNull?.track;
+    final options = track?.currentOptions;
+    if (track != null && options is lk.CameraCaptureOptions) {
+      await track.setCameraPosition(options.cameraPosition.switched());
+    }
   }
 
-  bool get anyoneConnected => peers.values.any((p) => p.state == RTCPeerConnectionState.RTCPeerConnectionStateConnected);
-
-  int get participantCount => _present.length;
+  Future<void> toggleSpeaker() async {
+    speakerOn = !speakerOn;
+    _notify();
+    await lk.Hardware.instance.setSpeakerphoneOn(speakerOn).catchError((_) {});
+  }
 
   Future<void> leave() async {
     if (disposed) return;
     disposed = true;
-    for (final userId in peers.keys) {
-      _send(userId, {'type': 'bye'});
-    }
-    for (final peer in peers.values) {
-      await peer.connection.close();
-      await peer.renderer.dispose();
-    }
-    peers.clear();
-    for (final track in _localStream?.getTracks() ?? const <MediaStreamTrack>[]) {
-      await track.stop();
-    }
-    await _localStream?.dispose();
-    localRenderer.srcObject = null;
-    await localRenderer.dispose();
-    final channel = _channel;
-    if (channel != null) {
-      await channel.untrack();
-      await _client.removeChannel(channel);
-    }
+    room.removeListener(_notify);
+    await _events?.dispose();
+    await room.disconnect();
+    await room.dispose();
   }
 
   void _notify() {
     if (!disposed) notifyListeners();
   }
+}
+
+/// How a participant appears: their profile when we know them, otherwise
+/// the name and photo carried in their call token.
+UserRef participantRef(lk.Participant participant, Map<String, UserRef> known) {
+  final person = known[participant.identity];
+  if (person != null) return person;
+  Map<String, dynamic>? meta;
+  try {
+    meta = jsonDecode(participant.metadata ?? '') as Map<String, dynamic>?;
+  } catch (_) {}
+  return UserRef(
+    id: participant.identity,
+    username: meta?['username'] as String? ?? '',
+    fullName: participant.name.isEmpty ? 'Guest' : participant.name,
+    avatarUrl: meta?['avatar_url'] as String?,
+    isAnonymous: participant.identity.startsWith('anon-'),
+  );
+}
+
+/// The participant's camera, when it's on and we're receiving it.
+lk.VideoTrack? cameraOf(lk.Participant participant) {
+  for (final publication in participant.videoTrackPublications) {
+    final track = publication.track;
+    if (track != null && !publication.muted) return track as lk.VideoTrack;
+  }
+  return null;
 }

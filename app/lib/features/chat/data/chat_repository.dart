@@ -9,7 +9,14 @@ final chatRepositoryProvider = Provider<ChatRepository>((ref) => ChatRepository(
 
 /// Header information for an open conversation.
 class ConversationInfo {
-  const ConversationInfo({required this.id, required this.type, required this.members, this.title, this.avatarUrl, this.room});
+  const ConversationInfo({
+    required this.id,
+    required this.type,
+    required this.members,
+    this.title,
+    this.avatarUrl,
+    this.room,
+  });
 
   final String id;
   final String type;
@@ -33,8 +40,11 @@ class ChatRepository {
   }
 
   Future<ConversationInfo> info(String conversationId) async {
-    final conversation =
-        await _client.from('conversations').select('id, type, title, avatar_url').eq('id', conversationId).single();
+    final conversation = await _client
+        .from('conversations')
+        .select('id, type, title, avatar_url')
+        .eq('id', conversationId)
+        .single();
     final members = await this.members(conversationId);
     RoomRef? room;
     if (conversation['type'] == 'room') {
@@ -93,7 +103,8 @@ class ChatRepository {
   Future<void> edit(String id, String body) async {
     await _client
         .from('messages')
-        .update({'body': body, 'edited_at': DateTime.now().toUtc().toIso8601String()}).eq('id', id);
+        .update({'body': body, 'edited_at': DateTime.now().toUtc().toIso8601String()})
+        .eq('id', id);
   }
 
   Future<void> unsend(String id) async {
@@ -149,9 +160,9 @@ class ChatRepository {
   // Calls --------------------------------------------------------------------
 
   Future<String> startCall(String conversationId, {required bool video}) => _client.rpc<String>(
-        'start_call',
-        params: {'p_conversation': conversationId, 'p_kind': video ? 'video' : 'voice'},
-      );
+    'start_call',
+    params: {'p_conversation': conversationId, 'p_kind': video ? 'video' : 'voice'},
+  );
 
   Future<void> updateCall(String callId, String status) async {
     await _client.rpc<void>('update_call', params: {'p_call': callId, 'p_status': status});
@@ -161,4 +172,29 @@ class ChatRepository {
     final row = await _client.from('calls').select().eq('id', callId).maybeSingle();
     return row == null ? null : Call.fromJson(row);
   }
+
+  /// A short-lived LiveKit token for a call or a community room's voice/video.
+  Future<CallGrant> callToken({String? callId, String? roomId}) async {
+    final json = await _client.rpc<Map<String, dynamic>>('call_token', params: {'p_call': callId, 'p_room': roomId});
+    return CallGrant.fromJson(json);
+  }
+}
+
+/// Where and how to join a LiveKit call.
+class CallGrant {
+  const CallGrant({required this.url, required this.token, required this.identity, required this.name});
+
+  factory CallGrant.fromJson(Json json) => CallGrant(
+    url: json['url'] as String,
+    token: json['token'] as String,
+    identity: json['identity'] as String,
+    name: json['name'] as String? ?? '',
+  );
+
+  final String url;
+  final String token;
+
+  /// Your id in the call: your user id, or an `anon-…` id for private profiles in rooms.
+  final String identity;
+  final String name;
 }

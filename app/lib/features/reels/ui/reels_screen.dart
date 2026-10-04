@@ -207,14 +207,23 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
         fit: StackFit.expand,
         children: [
           if (video != null && video.value.isInitialized)
-            FittedBox(
-              fit: BoxFit.cover,
-              clipBehavior: Clip.hardEdge,
-              child: SizedBox(
-                width: video.value.size.width,
-                height: video.value.size.height,
-                child: VideoPlayer(video),
-              ),
+            LayoutBuilder(
+              builder: (context, box) {
+                // Fill the screen only when the video is about the screen's
+                // shape (like 9:16). Wider videos are shown whole, letterboxed,
+                // instead of zooming into the middle.
+                final screen = box.maxWidth / box.maxHeight;
+                final fill = (video.value.aspectRatio / screen - 1).abs() < 0.2;
+                return FittedBox(
+                  fit: fill ? BoxFit.cover : BoxFit.contain,
+                  clipBehavior: Clip.hardEdge,
+                  child: SizedBox(
+                    width: video.value.size.width,
+                    height: video.value.size.height,
+                    child: VideoPlayer(video),
+                  ),
+                );
+              },
             )
           else
             const Center(child: CircularProgressIndicator(color: Colors.white54, strokeWidth: 2)),
