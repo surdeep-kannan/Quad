@@ -23,6 +23,7 @@ import '../../features/events/ui/event_editor_screen.dart';
 import '../../features/events/ui/event_manage_screen.dart';
 import '../../features/events/ui/events_screen.dart';
 import '../../features/home/home_screen.dart';
+import '../../features/legal/legal_screen.dart';
 import '../../features/notifications/ui/notifications_screen.dart';
 import '../../features/onboarding/onboarding_screen.dart';
 import '../../features/posts/ui/composer_screen.dart';
@@ -34,6 +35,7 @@ import '../../features/profile/ui/follow_list_screen.dart';
 import '../../features/profile/ui/profile_screen.dart';
 import '../../features/reels/ui/create_reel_screen.dart';
 import '../../features/reels/ui/reels_screen.dart';
+import '../../features/reels/ui/video_library_screens.dart';
 import '../../features/search/ui/search_screen.dart';
 import '../../features/settings/ui/settings_screen.dart';
 import '../../features/shell/app_shell.dart';
@@ -62,6 +64,8 @@ final routerProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       final location = state.matchedLocation;
       final signedIn = ref.read(supabaseProvider).auth.currentSession != null;
+      // The legal pages are readable before signing up.
+      if (location.startsWith('/legal/')) return null;
       if (!signedIn) return _authRoutes.contains(location) ? null : '/welcome';
 
       final profile = ref.read(myProfileProvider);
@@ -113,6 +117,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       page('/event/:id/edit', (s) => EventEditorScreen(eventId: s.pathParameters['id'])),
       page('/event/:id/manage', (s) => EventManageScreen(eventId: s.pathParameters['id']!)),
       page('/reels/new', (_) => const CreateReelScreen()),
+      page('/watch', (s) => VideoPlayerScreen(args: s.extra is WatchArgs ? s.extra! as WatchArgs : null)),
+      page('/library/liked', (_) => const LikedVideosScreen()),
+      page('/library/playlists', (_) => const PlaylistsScreen()),
+      page('/library/playlists/:id', (s) => PlaylistScreen(playlistId: s.pathParameters['id']!)),
       page('/chat/new', (_) => const NewChatScreen()),
       page('/chat/search', (_) => const MessageSearchScreen()),
       page('/chat/:id', (s) => ConversationScreen(conversationId: s.pathParameters['id']!)),
@@ -124,6 +132,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       page('/rankings/method', (_) => const RankingMethodScreen()),
       page('/settings', (_) => const SettingsScreen()),
       page('/settings/blocked', (_) => const BlockedUsersScreen()),
+      page('/legal/:doc', (s) => LegalScreen(doc: LegalDoc.fromSlug(s.pathParameters['doc']))),
     ],
   );
 });

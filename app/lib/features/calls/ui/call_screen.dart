@@ -1,23 +1,19 @@
-import 'dart:async';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:livekit_client/livekit_client.dart' as lk;
 import 'package:material_ui/material_ui.dart';
 
-import '../../../core/data/realtime.dart';
 import '../../../core/data/refs.dart';
-import '../../../core/data/supabase_providers.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icons.dart';
 import '../../../core/widgets/avatars.dart';
-import '../../chat/data/chat_models.dart';
-import '../../chat/data/chat_repository.dart';
-import '../../communities/providers.dart';
+import '../active_call.dart';
 import '../call_service.dart';
 
-/// A 1:1 or group call ([callId]) or a community room's voice/video ([roomId]).
+/// A 1:1 or group call ([callId]) or a community room's voice/video
+/// ([roomId]). The call itself lives in [activeCallProvider]; going back
+/// minimizes it and a bar at the top of the app brings you back.
 class CallScreen extends ConsumerStatefulWidget {
   const CallScreen({super.key, this.callId, this.roomId, this.outgoing = false, this.video = false});
 
@@ -31,185 +27,97 @@ class CallScreen extends ConsumerStatefulWidget {
 }
 
 class _CallScreenState extends ConsumerState<CallScreen> {
-  Call? _call;
-  Map<String, UserRef> _people = {};
-  CallSession? _session;
-  bool _ringing = false;
-  bool _ended = false;
-  Timer? _noAnswer;
-  Timer? _clock;
-  Duration _elapsed = Duration.zero;
-  StreamSubscription<InboxEvent>? _events;
-
-  bool get _isRoom => widget.roomId != null;
+  OngoingCall? _call;
 
   @override
   void initState() {
     super.initState();
-    unawaited(_load());
+    final existing = ref.read(activeCallProvider);
+    if (existing != null && !existing.ended && existing.callId == widget.callId && existing.roomId == widget.roomId) {
+      _attach(existing);
+    } else {
+      // Starting a call changes app-wide state, which can't happen mid-build.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final call = ref
+            .read(activeCallProvider.notifier)
+            .open(callId: widget.callId, roomId: widget.roomId, outgoing: widget.outgoing, video: widget.video);
+        setState(() => _attach(call));
+      });
+    }
   }
 
-  Future<void> _load() async {
-    final repo = ref.read(chatRepositoryProvider);
-    if (_isRoom) {
-      await _join(video: widget.video);
-      return;
-    }
-    final call = await repo.call(widget.callId!);
-    if (call == null || !mounted) return _close();
-    final members = await repo.members(call.conversationId);
+  void _attach(OngoingCall call) {
+    call.addListener(_changed);
+    _call = call;
+    // Listeners (the "return to call" bar) can't be notified mid-build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      call.setScreenOpen(true);
+      if (call.ended) _close();
+    });
+  }
+
+  void _changed() {
     if (!mounted) return;
-    setState(() {
-      _call = call;
-      _people = {for (final m in members) m.user.id: m.user};
-      _ringing = !widget.outgoing && call.status == 'ringing';
-    });
-    _events = ref.read(inboxRealtimeProvider)?.events.listen((event) {
-      if (event is CallChanged && event.row['id'] == call.id) {
-        final status = event.row['status'] as String?;
-        if (status == 'ended' || status == 'declined' || status == 'missed') _close();
-      }
-    });
-    if (call.status == 'ended' || call.status == 'missed' || call.status == 'declined') return _close();
-    if (!_ringing) {
-      await _join(video: call.isVideo);
-      if (widget.outgoing) {
-        _noAnswer = Timer(const Duration(seconds: 45), () {
-          if (!(_session?.anyoneConnected ?? false)) {
-            unawaited(repo.updateCall(call.id, 'missed').catchError((_) {}));
-            _close();
-          }
-        });
-      }
-    }
-  }
-
-  Future<void> _join({required bool video}) async {
-    final session = CallSession(
-      repo: ref.read(chatRepositoryProvider),
-      callId: widget.callId,
-      roomId: widget.roomId,
-      video: video,
-    );
-    session.addListener(_onSession);
-    setState(() => _session = session);
-    await session.join();
-  }
-
-  void _onSession() {
-    final session = _session;
-    if (session == null || !mounted) return;
-    if (session.anyoneConnected && _clock == null) {
-      _noAnswer?.cancel();
-      _clock = Timer.periodic(
-        const Duration(seconds: 1),
-        (_) => setState(() => _elapsed += const Duration(seconds: 1)),
-      );
-      final call = _call;
-      if (call != null && call.status == 'ringing') {
-        unawaited(ref.read(chatRepositoryProvider).updateCall(call.id, 'ongoing').catchError((_) {}));
-      }
-    }
+    if (_call?.ended ?? false) return _close();
     setState(() {});
   }
 
-  Future<void> _accept() async {
-    final call = _call!;
-    ref.read(incomingCallProvider.notifier).clear();
-    setState(() => _ringing = false);
-    unawaited(ref.read(chatRepositoryProvider).updateCall(call.id, 'ongoing').catchError((_) {}));
-    await _join(video: call.isVideo);
-  }
-
-  Future<void> _decline() async {
-    ref.read(incomingCallProvider.notifier).clear();
-    await ref.read(chatRepositoryProvider).updateCall(_call!.id, 'declined').catchError((_) {});
-    _close();
-  }
-
-  Future<void> _hangUp() async {
-    final call = _call;
-    final alone = (_session?.remote.length ?? 0) <= 1;
-    if (call != null && alone) {
-      await ref
-          .read(chatRepositoryProvider)
-          .updateCall(call.id, _session?.anyoneConnected ?? false ? 'ended' : 'missed')
-          .catchError((_) {});
-    }
-    _close();
-  }
-
+  /// Leaves the call screen (the call itself keeps going unless it ended).
+  /// Opened from a link or notification there may be nothing behind it, so
+  /// fall back to Home.
   void _close() {
-    if (_ended) return;
-    _ended = true;
-    if (mounted && context.canPop()) context.pop();
+    if (!mounted) return;
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/home');
+    }
   }
 
   @override
   void dispose() {
-    _noAnswer?.cancel();
-    _clock?.cancel();
-    unawaited(_events?.cancel());
-    final session = _session;
-    if (session != null) {
-      session.removeListener(_onSession);
-      unawaited(session.leave());
+    final call = _call;
+    if (call != null) {
+      call.removeListener(_changed);
+      // Let the "return to call" bar appear.
+      WidgetsBinding.instance.addPostFrameCallback((_) => call.setScreenOpen(false));
     }
     super.dispose();
   }
 
-  String get _title {
-    if (_isRoom) {
-      final room = ref.watch(roomProvider(widget.roomId!)).value;
-      return room == null ? 'Room call' : '#${room.name}';
-    }
-    final me = ref.read(currentUserIdProvider);
-    final others = _people.values.where((p) => p.id != me).toList();
-    if (others.length == 1) return others.first.fullName;
-    return others.map((p) => p.firstName).take(3).join(', ');
-  }
-
-  String get _status {
-    final session = _session;
-    if (_ringing) return _call?.isVideo ?? false ? 'Incoming video call' : 'Incoming voice call';
-    if (session?.error != null) return session!.error!;
-    if (session == null || !session.joined) return 'Connecting…';
-    if (session.anyoneConnected) {
-      final m = _elapsed.inMinutes.toString().padLeft(2, '0');
-      final s = (_elapsed.inSeconds % 60).toString().padLeft(2, '0');
-      return _isRoom ? '${session.remote.length + 1} here · $m:$s' : '$m:$s';
-    }
-    return _isRoom ? 'Waiting for others to join' : 'Ringing…';
-  }
-
   @override
   Widget build(BuildContext context) {
-    final session = _session;
-    final me = ref.watch(currentUserIdProvider);
-    final others = _people.values.where((p) => p.id != me).toList();
-    final hero = others.isEmpty ? null : others.first;
-    final video = session?.video ?? false;
+    final call = _call;
+    final session = call?.session;
+    final people = call?.people ?? const <String, UserRef>{};
+    final hero = call?.otherPerson;
+    final title = call?.title ?? (widget.roomId != null ? 'Room call' : 'Call');
+    final status = call?.status ?? 'Connecting…';
+    final ringing = call?.ringing ?? false;
+    final isRoom = widget.roomId != null;
+    final video = call?.video ?? widget.video;
     final remote = session?.remote ?? const <lk.RemoteParticipant>[];
     final top = MediaQuery.paddingOf(context).top;
 
     final Widget stage;
     if (video && remote.isNotEmpty) {
       stage = Positioned.fill(
-        child: _VideoGrid(participants: remote, people: _people),
+        child: _VideoGrid(participants: remote, people: people),
       );
-    } else if (_isRoom && session != null && session.joined) {
+    } else if (isRoom && session != null && session.joined) {
       stage = Positioned.fill(
-        child: _VoiceGrid(session: session, people: _people, title: _title, status: _status),
+        child: _VoiceGrid(session: session, people: people, title: title, status: status),
       );
     } else {
       stage = Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            UserAvatar(name: hero?.fullName ?? _title, url: hero?.avatarUrl, size: 112),
+            UserAvatar(name: hero?.fullName ?? title, url: hero?.avatarUrl, size: 112),
             const SizedBox(height: 20),
             Text(
-              _title,
+              title,
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 26,
@@ -218,13 +126,13 @@ class _CallScreenState extends ConsumerState<CallScreen> {
               ),
             ),
             const SizedBox(height: 8),
-            Text(_status, style: const TextStyle(color: Colors.white70, fontSize: 15)),
+            Text(status, style: const TextStyle(color: Colors.white70, fontSize: 15)),
             if (remote.length > 1) ...[
               const SizedBox(height: 18),
               Wrap(
                 spacing: 10,
                 children: [
-                  for (final participant in remote) AuthorAvatar(user: participantRef(participant, _people), size: 44),
+                  for (final participant in remote) AuthorAvatar(user: participantRef(participant, people), size: 44),
                 ],
               ),
             ],
@@ -240,7 +148,7 @@ class _CallScreenState extends ConsumerState<CallScreen> {
       body: Stack(
         children: [
           stage,
-          if (video && session != null && !_ringing)
+          if (video && session != null && !ringing)
             Positioned(
               right: 16,
               top: top + 16,
@@ -260,12 +168,22 @@ class _CallScreenState extends ConsumerState<CallScreen> {
                 ),
               ),
             ),
+          // Minimize: the call keeps going while you use the rest of the app.
+          Positioned(
+            left: 8,
+            top: top + 8,
+            child: IconButton(
+              tooltip: 'Minimize call',
+              icon: const Icon(AppIcons.minimize, color: Colors.white),
+              onPressed: _close,
+            ),
+          ),
           if (video && remote.isNotEmpty)
             Positioned(
-              left: 20,
+              left: 60,
               top: top + 20,
               child: Text(
-                _status,
+                status,
                 style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w600,
@@ -288,7 +206,7 @@ class _CallScreenState extends ConsumerState<CallScreen> {
             left: 0,
             right: 0,
             bottom: MediaQuery.paddingOf(context).bottom + 32,
-            child: _ringing
+            child: ringing
                 ? Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
@@ -296,13 +214,13 @@ class _CallScreenState extends ConsumerState<CallScreen> {
                         icon: AppIcons.phoneOff,
                         label: 'Decline',
                         color: const Color(0xFFE5383B),
-                        onTap: _decline,
+                        onTap: call?.decline,
                       ),
                       _RoundButton(
                         icon: AppIcons.phoneFill,
                         label: 'Accept',
                         color: const Color(0xFF22B45E),
-                        onTap: _accept,
+                        onTap: call?.accept,
                       ),
                     ],
                   )
@@ -334,9 +252,9 @@ class _CallScreenState extends ConsumerState<CallScreen> {
                         ),
                       _RoundButton(
                         icon: AppIcons.phoneOff,
-                        label: _isRoom ? 'Leave' : 'End',
+                        label: isRoom ? 'Leave' : 'End',
                         color: const Color(0xFFE5383B),
-                        onTap: _hangUp,
+                        onTap: call?.hangUp,
                       ),
                     ],
                   ),

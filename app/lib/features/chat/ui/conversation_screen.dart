@@ -22,14 +22,17 @@ import '../../calls/call_service.dart';
 import '../../calls/ui/room_voice_bar.dart';
 import '../../communities/data/community.dart';
 import '../../communities/providers.dart';
+import '../../communities/ui/members_screen.dart';
 import '../../events/providers.dart';
 import '../../events/ui/event_poster.dart';
+import '../../moderation/data/moderation_repository.dart';
 import '../../moderation/ui/report_sheet.dart';
 import '../../posts/providers.dart';
 import '../../profile/providers.dart';
 import '../data/chat_models.dart';
 import '../providers.dart';
 import 'chat_list_screen.dart';
+import 'stickers.dart';
 
 const _quickReactions = ['👍', '❤️', '😂', '🔥', '😮', '🙏'];
 
@@ -88,6 +91,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   Message? _replyTo;
   Message? _editing;
   bool _anonymous = false;
+  bool _stickersOpen = false;
   late final ChatList _chatList = ref.read(chatListProvider.notifier);
 
   /// Room messages from private profiles are always anonymous.
@@ -99,6 +103,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   void initState() {
     super.initState();
     _chatList.opened(widget.conversationId);
+    // Typing brings the keyboard back in place of the sticker panel.
+    _focus.addListener(() {
+      if (_focus.hasFocus && _stickersOpen) setState(() => _stickersOpen = false);
+    });
     _scroll.addListener(() {
       if (_scroll.position.pixels > _scroll.position.maxScrollExtent - 400) {
         ref.read(conversationProvider(widget.conversationId).notifier).loadOlder();
@@ -116,6 +124,26 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   }
 
   ConversationController get _controller => ref.read(conversationProvider(widget.conversationId).notifier);
+
+  void _toggleStickers() {
+    if (_stickersOpen) {
+      setState(() => _stickersOpen = false);
+      _focus.requestFocus();
+    } else {
+      _focus.unfocus();
+      setState(() => _stickersOpen = true);
+    }
+  }
+
+  Future<void> _sendSticker(String id) async {
+    final replyTo = _replyTo;
+    setState(() => _replyTo = null);
+    try {
+      await _controller.send(sticker: id, replyToId: replyTo?.id, anonymous: _sendAnonymously);
+    } catch (error) {
+      if (mounted) showToast(context, friendlyError(error), error: true);
+    }
+  }
 
   Future<void> _send() async {
     final text = _input.text.trim();
@@ -192,8 +220,18 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     }
   }
 
+  /// The room's community, for staff actions. Kept loaded by [build].
+  Community? get _community {
+    final slug = ref.read(conversationProvider(widget.conversationId)).value?.info.room?.community.slug;
+    return slug == null ? null : ref.read(communityProvider(slug)).value;
+  }
+
   Future<void> _messageMenu(Message message, bool mine) async {
     HapticFeedback.mediumImpact();
+    final community = widget.room == null ? null : _community;
+    final sender = message.senderId;
+    final canModerate = !mine && (community?.can(CommunityPermissions.manageMessages) ?? false);
+    final memberOptions = !mine && sender != null && !message.isAnonymous && (community?.isStaff ?? false);
     await showAppSheet<void>(
       context,
       builder: (sheetContext) => SafeArea(
@@ -234,7 +272,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                 _focus.requestFocus();
               },
             ),
-            if (message.body != null)
+            if (message.body != null && !message.isSticker)
               ListTile(
                 leading: const Icon(AppIcons.copy),
                 title: const Text('Copy text'),
@@ -256,6 +294,32 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                     _input.text = message.body ?? '';
                   });
                   _focus.requestFocus();
+                },
+              ),
+            if (memberOptions)
+              ListTile(
+                leading: const Icon(AppIcons.roles),
+                title: const Text('Member options'),
+                subtitle: const Text('Profile, promote, kick or ban'),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  showMemberActionsFor(context, ref, community!, sender);
+                },
+              ),
+            if (canModerate)
+              ListTile(
+                leading: Icon(AppIcons.shield, color: sheetContext.colors.danger),
+                title: Text('Remove message', style: TextStyle(color: sheetContext.colors.danger)),
+                onTap: () async {
+                  Navigator.of(sheetContext).pop();
+                  try {
+                    await ref
+                        .read(moderationRepositoryProvider)
+                        .moderate(targetType: 'message', targetId: message.id, action: 'remove');
+                    if (mounted) showToast(context, 'Message removed');
+                  } catch (error) {
+                    if (mounted) showToast(context, friendlyError(error), error: true);
+                  }
                 },
               ),
             if (mine)
@@ -287,8 +351,11 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(conversationProvider(widget.conversationId));
+    // Keep the room's community (and your permissions in it) loaded for staff actions.
+    final roomCommunity = state.value?.info.room?.community.slug;
+    if (roomCommunity != null) ref.watch(communityProvider(roomCommunity));
     final c = context.colors;
-    return Scaffold(
+    final scaffold = Scaffold(
       appBar: AppBar(
         leading: IconButton(tooltip: 'Back', icon: const Icon(AppIcons.back), onPressed: () => context.pop()),
         titleSpacing: 0,
@@ -357,10 +424,25 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
               onAttach: _attach,
               onSend: _send,
               onTyping: () => _controller.notifyTyping(anonymous: _sendAnonymously),
+              stickersOpen: _stickersOpen,
+              onStickers: _toggleStickers,
             ),
+            if (_stickersOpen && _editing == null)
+              Padding(
+                padding: EdgeInsets.only(bottom: context.safePadding.bottom),
+                child: StickerPanel(onPick: _sendSticker),
+              ),
           ],
         ),
       ),
+    );
+    // Back closes the sticker panel before leaving the chat.
+    return PopScope(
+      canPop: !_stickersOpen,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) setState(() => _stickersOpen = false);
+      },
+      child: scaffold,
     );
   }
 }
@@ -670,61 +752,87 @@ class _BubbleState extends State<_Bubble> {
       );
     }
 
-    final bubble = Container(
-      constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.76),
-      padding: EdgeInsets.fromLTRB(
-        message.attachments.isNotEmpty ? 4 : 12,
-        message.attachments.isNotEmpty ? 4 : 8,
-        message.attachments.isNotEmpty ? 4 : 12,
-        8,
-      ),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: borderRadius,
-        border: mine ? null : Border.all(color: c.line),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          content,
-          const SizedBox(height: 2),
-          Padding(
-            padding: EdgeInsets.only(right: message.attachments.isNotEmpty ? 6 : 0),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (message.editedAt != null && !message.isDeleted)
-                  Text(
-                    'edited · ',
-                    style: context.text.labelSmall!.copyWith(color: fg.withValues(alpha: 0.5), fontSize: 10),
-                  ),
-                Text(
-                  clockTime(message.createdAt),
-                  style: context.text.labelSmall!.copyWith(color: fg.withValues(alpha: 0.55), fontSize: 10.5),
-                ),
-                if (message.isAnonymous) ...[
-                  const SizedBox(width: 4),
-                  Icon(AppIcons.anonymous, size: 11, color: fg.withValues(alpha: 0.55)),
-                ],
-                if (mine) ...[
-                  const SizedBox(width: 3),
-                  Icon(
-                    switch (message.sendState) {
-                      SendState.sending => AppIcons.clock,
-                      SendState.failed => AppIcons.warning,
-                      SendState.sent => AppIcons.check,
-                    },
-                    size: 12,
-                    color: message.sendState == SendState.failed ? c.danger : fg.withValues(alpha: 0.55),
-                  ),
-                ],
-              ],
-            ),
+    Widget meta(Color fg) => Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (message.editedAt != null && !message.isDeleted)
+          Text('edited · ', style: context.text.labelSmall!.copyWith(color: fg.withValues(alpha: 0.5), fontSize: 10)),
+        Text(
+          clockTime(message.createdAt),
+          style: context.text.labelSmall!.copyWith(color: fg.withValues(alpha: 0.55), fontSize: 10.5),
+        ),
+        if (message.isAnonymous) ...[
+          const SizedBox(width: 4),
+          Icon(AppIcons.anonymous, size: 11, color: fg.withValues(alpha: 0.55)),
+        ],
+        if (mine) ...[
+          const SizedBox(width: 3),
+          Icon(
+            switch (message.sendState) {
+              SendState.sending => AppIcons.clock,
+              SendState.failed => AppIcons.warning,
+              SendState.sent => AppIcons.check,
+            },
+            size: 12,
+            color: message.sendState == SendState.failed ? c.danger : fg.withValues(alpha: 0.55),
           ),
         ],
-      ),
+      ],
     );
+
+    // Stickers float on their own, without a bubble.
+    final Widget bubble = message.isSticker && !message.isDeleted
+        ? Column(
+            crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (widget.replyTo != null)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 4),
+                  padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+                  constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.6),
+                  decoration: BoxDecoration(
+                    color: c.surfaceMuted,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border(left: BorderSide(color: c.accent, width: 3)),
+                  ),
+                  child: Text(
+                    '${widget.replyName ?? 'Reply'}: ${widget.replyTo!.preview}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.text.bodySmall,
+                  ),
+                ),
+              StickerView(id: message.body ?? '', size: 128),
+              Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: meta(c.ink)),
+            ],
+          )
+        : Container(
+            constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.76),
+            padding: EdgeInsets.fromLTRB(
+              message.attachments.isNotEmpty ? 4 : 12,
+              message.attachments.isNotEmpty ? 4 : 8,
+              message.attachments.isNotEmpty ? 4 : 12,
+              8,
+            ),
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: borderRadius,
+              border: mine ? null : Border.all(color: c.line),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                content,
+                const SizedBox(height: 2),
+                Padding(
+                  padding: EdgeInsets.only(right: message.attachments.isNotEmpty ? 6 : 0),
+                  child: meta(fg),
+                ),
+              ],
+            ),
+          );
 
     final reactions = message.reactions.entries.where((e) => e.value.isNotEmpty).toList();
 
@@ -1039,6 +1147,8 @@ class _Composer extends StatelessWidget {
     required this.anonymous,
     required this.anonymousLocked,
     required this.onAnonymousToggle,
+    required this.stickersOpen,
+    required this.onStickers,
   });
 
   final TextEditingController controller;
@@ -1056,6 +1166,8 @@ class _Composer extends StatelessWidget {
   final bool? anonymous;
   final bool anonymousLocked;
   final VoidCallback onAnonymousToggle;
+  final bool stickersOpen;
+  final VoidCallback onStickers;
 
   @override
   Widget build(BuildContext context) {
@@ -1065,7 +1177,8 @@ class _Composer extends StatelessWidget {
         color: c.surface,
         border: Border(top: BorderSide(color: c.line)),
       ),
-      padding: EdgeInsets.fromLTRB(6, 6, 6, 6 + context.safePadding.bottom),
+      // The sticker panel sits below and takes the bottom inset instead.
+      padding: EdgeInsets.fromLTRB(6, 6, 6, 6 + (stickersOpen ? 0 : context.safePadding.bottom)),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1130,6 +1243,13 @@ class _Composer extends StatelessWidget {
                   decoration: InputDecoration(
                     hintText: anonymous ?? false ? 'Message anonymously' : 'Message',
                     contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    suffixIcon: editing
+                        ? null
+                        : IconButton(
+                            tooltip: stickersOpen ? 'Keyboard' : 'Stickers',
+                            icon: Icon(stickersOpen ? AppIcons.keyboard : AppIcons.sticker, color: c.inkMuted),
+                            onPressed: onStickers,
+                          ),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(22), borderSide: BorderSide.none),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(22),

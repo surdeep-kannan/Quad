@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../../core/data/supabase_providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/context_x.dart';
@@ -29,6 +30,7 @@ import '../data/community.dart';
 import '../data/community_repository.dart';
 import '../providers.dart';
 import 'community_tiles.dart';
+import 'members_screen.dart';
 
 enum _Section { posts, rooms, events, about }
 
@@ -351,7 +353,15 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
           message: community.isMember ? 'Kick things off with the first post.' : 'Join to start the conversation.',
           compact: true,
         ),
-        itemBuilder: (_, post, _) => PostCard(post: post, showCommunity: false, isMod: community.isMod),
+        itemBuilder: (_, post, _) => PostCard(
+          post: post,
+          showCommunity: false,
+          isMod: community.isMod,
+          // Staff can long-press an author to promote, kick or ban them.
+          onAuthorLongPress: community.isStaff && post.author.id != ref.read(currentUserIdProvider)
+              ? (post) => showMemberActionsFor(context, ref, community, post.author.id)
+              : null,
+        ),
       ),
     ];
   }

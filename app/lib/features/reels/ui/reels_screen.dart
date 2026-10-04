@@ -18,6 +18,7 @@ import '../../posts/data/post_repository.dart';
 import '../../posts/providers.dart';
 import '../../posts/ui/comments.dart';
 import '../../posts/ui/post_card.dart';
+import 'video_library_screens.dart';
 
 /// Full-screen vertical short videos. Swipe up for the next one.
 class ReelsScreen extends ConsumerStatefulWidget {
@@ -78,7 +79,7 @@ class _ReelsScreenState extends ConsumerState<ReelsScreen> {
                     setState(() => _index = i);
                     if (i >= paged.items.length - 3) notifier.loadMore();
                   },
-                  itemBuilder: (_, i) => _ReelPage(
+                  itemBuilder: (_, i) => ReelPage(
                     post: paged.items[i],
                     active: i == _index && TickerMode.valuesOf(context).enabled,
                     muted: _muted,
@@ -118,8 +119,16 @@ class _ReelsScreenState extends ConsumerState<ReelsScreen> {
   }
 }
 
-class _ReelPage extends ConsumerStatefulWidget {
-  const _ReelPage({required this.post, required this.active, required this.muted, required this.onToggleMute});
+/// One full-screen reel with its buttons. Used by the Reels tab and by the
+/// liked-videos and playlist players.
+class ReelPage extends ConsumerStatefulWidget {
+  const ReelPage({
+    super.key,
+    required this.post,
+    required this.active,
+    required this.muted,
+    required this.onToggleMute,
+  });
 
   final Post post;
   final bool active;
@@ -127,10 +136,10 @@ class _ReelPage extends ConsumerStatefulWidget {
   final VoidCallback onToggleMute;
 
   @override
-  ConsumerState<_ReelPage> createState() => _ReelPageState();
+  ConsumerState<ReelPage> createState() => _ReelPageState();
 }
 
-class _ReelPageState extends ConsumerState<_ReelPage> {
+class _ReelPageState extends ConsumerState<ReelPage> {
   VideoPlayerController? _video;
   bool _paused = false;
   bool _viewed = false;
@@ -143,21 +152,19 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
     if (url != null) {
       // mixWithOthers: don't wait for audio focus, so the video still runs
       // during a phone call or while another app holds the audio.
-      _video = VideoPlayerController.networkUrl(
-        Uri.parse(url),
-        videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
-      )
-        ..setLooping(true)
-        ..initialize().then((_) {
-          if (!mounted) return;
-          setState(() {});
-          _sync();
-        });
+      _video =
+          VideoPlayerController.networkUrl(Uri.parse(url), videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true))
+            ..setLooping(true)
+            ..initialize().then((_) {
+              if (!mounted) return;
+              setState(() {});
+              _sync();
+            });
     }
   }
 
   @override
-  void didUpdateWidget(_ReelPage old) {
+  void didUpdateWidget(ReelPage old) {
     super.didUpdateWidget(old);
     _sync();
   }
@@ -316,6 +323,8 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
                   onTap: () => ref.read(postActionsProvider).toggleSave(post).catchError((Object e) {
                     if (context.mounted) showToast(context, friendlyError(e), error: true);
                   }),
+                  // Hold to file it into a playlist instead.
+                  onLongPress: () => showPlaylistSheet(context, post),
                 ),
                 _RailButton(
                   icon: widget.muted ? AppIcons.volumeOff : AppIcons.volumeOn,
@@ -333,11 +342,18 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
 }
 
 class _RailButton extends StatelessWidget {
-  const _RailButton({required this.icon, required this.label, required this.onTap, this.color = Colors.white});
+  const _RailButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.onLongPress,
+    this.color = Colors.white,
+  });
 
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
   final Color color;
 
   @override
@@ -346,6 +362,7 @@ class _RailButton extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 7),
       child: InkResponse(
         onTap: onTap,
+        onLongPress: onLongPress,
         radius: 30,
         child: Column(
           children: [

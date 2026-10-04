@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/data/supabase_providers.dart';
+import '../../legal/legal_screen.dart';
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) => AuthRepository(ref.watch(supabaseProvider)));
 
@@ -24,7 +25,12 @@ class AuthRepository {
     final response = await _client.auth.signUp(
       email: email.trim(),
       password: password,
-      data: {'full_name': name.trim()},
+      // Records which Terms and Privacy Policy the person agreed to.
+      data: {
+        'full_name': name.trim(),
+        'terms_version': legalVersion,
+        'terms_accepted_at': DateTime.now().toUtc().toIso8601String(),
+      },
       emailRedirectTo: _redirect,
     );
     return response.session != null;

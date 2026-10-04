@@ -27,13 +27,21 @@ import '../../events/ui/event_poster.dart';
 import '../../moderation/data/moderation_repository.dart';
 import '../../moderation/ui/report_sheet.dart';
 import '../../profile/data/profile.dart';
+import '../../reels/ui/video_library_screens.dart';
 import '../data/post.dart';
 import '../providers.dart';
 import 'post_video.dart';
 
 /// A post in a feed. Tapping opens the discussion.
 class PostCard extends ConsumerWidget {
-  const PostCard({super.key, required this.post, this.showCommunity = true, this.isMod = false, this.inDetail = false});
+  const PostCard({
+    super.key,
+    required this.post,
+    this.showCommunity = true,
+    this.isMod = false,
+    this.inDetail = false,
+    this.onAuthorLongPress,
+  });
 
   final Post post;
   final bool showCommunity;
@@ -41,6 +49,9 @@ class PostCard extends ConsumerWidget {
   /// Whether the viewer moderates the community this post is in.
   final bool isMod;
   final bool inDetail;
+
+  /// Staff actions for the author (community pages); ignored for anonymous posts.
+  final void Function(Post post)? onAuthorLongPress;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -51,7 +62,14 @@ class PostCard extends ConsumerWidget {
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _PostHeader(post: live, showCommunity: showCommunity, isMod: isMod),
+        _PostHeader(
+          post: live,
+          showCommunity: showCommunity,
+          isMod: isMod,
+          onAuthorLongPress: live.author.isAnonymous || onAuthorLongPress == null
+              ? null
+              : () => onAuthorLongPress!(live),
+        ),
         if (live.isRemoved) _RemovedNote(reason: live.removedReason),
         if (_typeLabel(live.type) != null) ...[
           const SizedBox(height: 10),
@@ -173,11 +191,12 @@ class _RemovedNote extends StatelessWidget {
 }
 
 class _PostHeader extends ConsumerWidget {
-  const _PostHeader({required this.post, required this.showCommunity, required this.isMod});
+  const _PostHeader({required this.post, required this.showCommunity, required this.isMod, this.onAuthorLongPress});
 
   final Post post;
   final bool showCommunity;
   final bool isMod;
+  final VoidCallback? onAuthorLongPress;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -188,6 +207,7 @@ class _PostHeader extends ConsumerWidget {
       children: [
         GestureDetector(
           onTap: post.author.isAnonymous ? null : () => context.push('/u/${post.author.username}'),
+          onLongPress: onAuthorLongPress,
           child: AuthorAvatar(user: post.author, size: 40),
         ),
         const SizedBox(width: 10),
@@ -200,6 +220,7 @@ class _PostHeader extends ConsumerWidget {
                   Flexible(
                     child: GestureDetector(
                       onTap: post.author.isAnonymous ? null : () => context.push('/u/${post.author.username}'),
+                      onLongPress: onAuthorLongPress,
                       child: NameLine(
                         name: post.author.fullName,
                         verified: post.author.isVerified,
@@ -918,6 +939,8 @@ Future<void> showPostMenu(BuildContext context, WidgetRef ref, Post post, {bool 
         label: post.isSaved ? 'Remove from saved' : 'Save',
         onTap: () => run(() => actions.toggleSave(post)),
       ),
+      if (post.video != null)
+        SheetAction(icon: AppIcons.listPlus, label: 'Add to playlist', onTap: () => showPlaylistSheet(context, post)),
       SheetAction(
         icon: AppIcons.link,
         label: 'Copy link',
@@ -981,12 +1004,21 @@ Future<void> showPostMenu(BuildContext context, WidgetRef ref, Post post, {bool 
 
 /// A compact row for a person, used in lists.
 class PersonRow extends StatelessWidget {
-  const PersonRow({super.key, required this.user, this.subtitle, this.trailing, this.onTap, this.online = false});
+  const PersonRow({
+    super.key,
+    required this.user,
+    this.subtitle,
+    this.trailing,
+    this.onTap,
+    this.onLongPress,
+    this.online = false,
+  });
 
   final UserRef user;
   final String? subtitle;
   final Widget? trailing;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
   final bool online;
 
   factory PersonRow.profile(Profile profile, {Widget? trailing, VoidCallback? onTap}) => PersonRow(
@@ -1000,6 +1032,7 @@ class PersonRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap ?? () => context.push('/u/${user.username}'),
+      onLongPress: onLongPress,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: Space.gutter, vertical: 10),
         child: Row(

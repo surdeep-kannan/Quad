@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
+import 'features/calls/ui/ongoing_call_bar.dart';
 import 'features/settings/theme_mode.dart';
 
 class QuadApp extends ConsumerWidget {
@@ -22,7 +23,7 @@ class QuadApp extends ConsumerWidget {
         // Some dependencies still use the legacy Material library; this maps
         // our theme onto it so their widgets match.
         // ignore: deprecated_member_use
-        return MaterialUiCompatibilityBridge(child: child!);
+        return MaterialUiCompatibilityBridge(child: OngoingCallFrame(child: child!));
       },
     );
   }

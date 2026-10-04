@@ -77,6 +77,14 @@ abstract final class AppIcons {
   static const anonymousOutline = IconData(0xe83e, fontFamily: 'PhosphorRegular');
   static const crown = IconData(0xe614, fontFamily: 'PhosphorFill');
   static const roles = IconData(0xe4cc, fontFamily: 'PhosphorRegular');
+  static const sticker = IconData(0xe5ac, fontFamily: 'PhosphorRegular');
+  static const keyboard = IconData(0xe2d8, fontFamily: 'PhosphorRegular');
+  static const playlist = IconData(0xe6aa, fontFamily: 'PhosphorRegular');
+  static const listPlus = IconData(0xe2f8, fontFamily: 'PhosphorRegular');
+  static const userMinus = IconData(0xe4ce, fontFamily: 'PhosphorRegular');
+  static const document = IconData(0xe23a, fontFamily: 'PhosphorRegular');
+  static const scales = IconData(0xe750, fontFamily: 'PhosphorRegular');
+  static const minimize = IconData(0xe136, fontFamily: 'PhosphorBold');
   static const verified = IconData(0xe606, fontFamily: 'PhosphorFill');
   static const shield = IconData(0xe40c, fontFamily: 'PhosphorRegular');
 

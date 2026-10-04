@@ -737,6 +737,65 @@ async function runScenarios(db) {
     check('senders can unsend anonymous messages', unsent.affectedRows === 1);
   });
 
+  // Stickers ---------------------------------------------------------------
+  await as(db, aarav, async () => {
+    const sticker = await one(db,
+      `insert into public.messages (conversation_id, sender_id, kind, body) values ($1, $2, 'sticker', 'campus/ship-it') returning id`,
+      [general.conversation_id, aarav]);
+    check('stickers can be sent', Boolean(sticker?.id));
+    check('sticker ids must look like pack/name', Boolean(await fails(db,
+      `insert into public.messages (conversation_id, sender_id, kind, body) values ($1, $2, 'sticker', 'not a sticker!')`,
+      [general.conversation_id, aarav])));
+  });
+  const stickerPreview = await one(db, `select last_message_preview from public.conversations where id = $1`, [general.conversation_id]);
+  check('chat lists show "Sticker" for stickers', stickerPreview.last_message_preview === 'Sticker', stickerPreview.last_message_preview);
+  await as(db, kabir, async () => {
+    await db.query(
+      `insert into public.messages (conversation_id, sender_id, kind, body) values ($1, $2, 'sticker', 'react/fire')`,
+      [general.conversation_id, kabir]);
+  });
+  const anonSticker = await one(db, `select sender_id, is_anonymous from public.messages where kind = 'sticker' and body = 'react/fire'`);
+  check('stickers from private profiles in rooms are anonymous', anonSticker.sender_id === null && anonSticker.is_anonymous);
+
+  // Liked videos and playlists ---------------------------------------------
+  await db.query(`update public.posts set created_at = created_at - interval '1 hour' where author_id = $1`, [aarav]);
+  let reelId;
+  let textId;
+  await as(db, aarav, async () => {
+    reelId = (await one(db, `select public.create_post('reel', $1, null, 'demo reel', $2::jsonb) as id`,
+      [communityId, JSON.stringify([{ url: 'https://example.com/reel.mp4', type: 'video' }])])).id;
+    textId = (await one(db, `select public.create_post('text', $1, null, 'just words') as id`, [communityId])).id;
+  });
+  let playlistId;
+  await as(db, kabir, async () => {
+    await db.query(`insert into public.post_reactions (post_id, user_id, kind) values ($1, $2, 'like')`, [reelId, kabir]);
+    await db.query(`insert into public.post_reactions (post_id, user_id, kind) values ($1, $2, 'like')`, [textId, kabir]);
+    const liked = await rows(db, `select id from public.liked_videos()`);
+    check('liked videos lists the reels you liked (and only videos)', liked.length === 1 && liked[0].id === reelId, JSON.stringify(liked));
+
+    playlistId = (await one(db, `insert into public.playlists (name) values ('  Study music  ') returning id, name`)).id;
+    const stored = await one(db, `select name from public.playlists where id = $1`, [playlistId]);
+    check('playlist names are trimmed', stored.name === 'Study music');
+    check('playlist names are unique per person',
+      Boolean(await fails(db, `insert into public.playlists (name) values ('Study music')`)));
+    await db.query(`insert into public.playlist_items (playlist_id, post_id) values ($1, $2)`, [playlistId, reelId]);
+    check('only videos can go into playlists',
+      Boolean(await fails(db, `insert into public.playlist_items (playlist_id, post_id) values ($1, $2)`, [playlistId, textId])));
+    const mine = await one(db, `select items_count, contains_post, cover from public.my_playlists($1)`, [reelId]);
+    check('my playlists report size, cover and whether a video is in them',
+      mine.items_count === 1 && mine.contains_post === true && mine.cover?.type === 'video', JSON.stringify(mine));
+    const videos = await rows(db, `select id from public.playlist_videos($1)`, [playlistId]);
+    check('a playlist lists its videos', videos.length === 1 && videos[0].id === reelId);
+  });
+  await as(db, aarav, async () => {
+    const theirs = await rows(db, `select id from public.playlists where id = $1`, [playlistId]);
+    check('playlists are private to their owner', theirs.length === 0);
+    check('nobody else can add to your playlist', Boolean(await fails(db,
+      `insert into public.playlist_items (playlist_id, post_id) values ($1, $2)`, [playlistId, reelId])));
+    const items = await rows(db, `select * from public.playlist_videos($1)`, [playlistId]);
+    check('nobody else can read your playlist', items.length === 0);
+  });
+
   // Reports on anonymous posts don't reveal the author to community moderators.
   await as(db, diya, async () => {
     await db.query(`select public.submit_report('post', $1, 'spam', 'anon report')`, [anonPost]);

@@ -281,21 +281,24 @@ class ConversationController extends AsyncNotifier<ChatState> {
     List<PickedFile> files = const [],
     String? sharedPostId,
     String? sharedEventId,
+    String? sticker,
     bool anonymous = false,
   }) async {
-    final body = text?.trim();
+    final body = sticker ?? text?.trim();
     final hasBody = body != null && body.isNotEmpty;
     if (!hasBody && files.isEmpty && sharedPostId == null && sharedEventId == null) return;
 
-    final kind = sharedPostId != null
-        ? 'post'
-        : sharedEventId != null
-            ? 'event'
-            : files.isEmpty
-                ? 'text'
-                : files.every((f) => f.isImage)
-                    ? 'image'
-                    : 'file';
+    final kind = sticker != null
+        ? 'sticker'
+        : sharedPostId != null
+            ? 'post'
+            : sharedEventId != null
+                ? 'event'
+                : files.isEmpty
+                    ? 'text'
+                    : files.every((f) => f.isImage)
+                        ? 'image'
+                        : 'file';
 
     final draft = Message(
       id: _uuid.v4(),

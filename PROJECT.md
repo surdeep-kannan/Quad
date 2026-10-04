@@ -45,7 +45,8 @@
 | Web build, served on your Wi-Fi for phone testing | **Done**: `http://<PC Wi-Fi IP>:8080` while the server runs |
 | Community roles and permissions (custom roles, ranks, 10 permissions) | **Done and live** (section 4, item 15) |
 | Private profiles and anonymous posting | **Done and live** (section 4, item 16) |
-| Automated checks | 124 database checks pass; two-browser LiveKit call tests; headless-browser screenshots of every main screen |
+| Stickers, liked videos, playlists, background calls, staff long-press actions, welcome story, Terms/Privacy/Guidelines | **Done** (section 4, items 17–22) |
+| Automated checks | 137 database checks pass; two-browser LiveKit call tests; headless-browser screenshots of every main screen |
 | Voice/video calls | **On LiveKit Cloud**; 1:1 and room calls tested between two browsers; not yet tried between two phones |
 | Android APK | **Built and installed** on a Realme phone over USB (section 2D) |
 | iOS build | **Not built**: needs a Mac with Xcode |
@@ -422,30 +423,72 @@ How anonymity works:
 - Profile posts, announcements and event posts are never anonymous.
 - Rate limits and spam checks still apply to anonymous posting.
 
+### 17. Stickers in chat (added after the first build)
+
+- Tap the sticker icon inside the message box (any chat or room) to open the sticker panel; tap the keyboard icon or the text box to go back to typing.
+- Two packs: **Campus** (16 die-cut labels such as Ship it, LGTM, Exam mode, Placement szn, Canteen?, Proxy pls, GG) and **Reactions** (18 big emoji). A **Recent** tab remembers what you sent on this device.
+- Stickers are drawn by the app, so a sticker message only stores its id (like `campus/ship-it`): nothing is uploaded, and the database checks the id's format. Chat lists show "Sticker". They can be replies, and are anonymous in rooms like other messages.
+
+### 18. Liked videos and playlists (added after the first build)
+
+- **Settings → Your library → Liked videos**: every reel and video you reacted to, most recent first, as a grid. Tap one to watch, and swipe up for the next, reels-style.
+- **Playlists** are your own named, private collections of reels and videos, separate from Saved. Add a video by **holding the Save button** on a reel, or from any video's **⋯ → Add to playlist**. Tick the playlists it belongs in, or create a new one from the same sheet.
+- **Settings → Your library → Playlists**: open one to **Play all**, hold a video to remove it, or rename/delete the playlist from ⋯. Limits: 100 playlists, 1,000 videos each. Nobody else can see your playlists (enforced in the database).
+
+### 19. Calls keep running in the background (added after the first build)
+
+- Leaving the call screen (back, or the ⌄ button) no longer hangs up. A green **return-to-call bar** stays at the top of every screen showing who you're with and the timer; tap it to go back, or use its hang-up button.
+- An incoming call you haven't answered shows a blue bar ("Tap to answer").
+- On Android a **foreground service** ("Call in progress" notification) keeps the microphone (and camera in video calls) working when you switch apps or lock the phone. On Android 13+ the app asks once for permission to show that notification.
+- Calls still end normally: hang up, the other person ends it, or nobody answers within 45 seconds.
+
+### 20. Staff long-press actions (added after the first build)
+
+Community staff can **press and hold** a person to get their options:
+
+| Where | What happens |
+|---|---|
+| Community → Members (and Manage → Members) | Hold someone: **View profile, Promote or change roles, Kick, Ban**. A plain tap opens their profile. |
+| Room chat | Hold someone's message: **Member options** (the same list), plus **Remove message** for people who can moderate room chat. |
+| Community feed | Hold a post's author (photo or name): the same list. Not shown for anonymous posts. |
+
+Only actions your permissions and rank allow are listed, and the database checks again.
+
+### 21. Welcome story (added after the first build)
+
+The first screen is a six-slide story above "Create account" and "I already have an account": your campus in one place, communities and roles, events and reminders, stickers and room calls, reels and rankings, private profiles and anonymity. Story bars at the top fill as slides auto-advance; tap the right or left side to skip, hold to pause.
+
+### 22. Terms, Privacy Policy and Community Guidelines (added after the first build)
+
+- In-app pages at `/legal/terms`, `/legal/privacy` and `/legal/guidelines`, readable before signing in, and linked from **Settings → About**.
+- Sign-up has a required checkbox: "I'm 13 or older and agree to the Terms of Service, Privacy Policy and Community Guidelines". The version agreed to (`terms_version`) and the time are saved on the account (Supabase user metadata).
+- The texts describe how this app actually works (anonymity, private profiles, LiveKit calls, roles and moderation, events, rankings). **They are a starting point, not legal advice:** have them reviewed before a public launch, add a real contact email, and bump `legalVersion` in `legal_screen.dart` when they change.
+
 ---
 
 ## 5. What is NOT done yet
 
 In priority order:
 
-1. **Try a call between two phones.** LiveKit calls work between two browsers (tested); try phone to phone, and phone to browser.
-2. **Calls while the app is closed.** An incoming call only rings while the app is open. Ringing a locked phone needs push notifications (item 4) plus CallKit/ConnectionService.
-3. **iOS build.** Needs a Mac with Xcode (the `Info.plist` permission texts are already in place). Android is done.
-4. **Push notifications** (Firebase Cloud Messaging, plus a Supabase Edge Function that sends a push when a notification row is inserted).
-5. **Reel processing.** Videos play as uploaded. Later: compression, HLS streaming and auto-thumbnails (for example with Mux or Cloudflare Stream).
-6. **Deep links.** Share links use `quad://…` on phones and `…/#/post/<id>` on web. Needs a real domain plus Android App Links and iOS Universal Links.
-7. **Small UI gaps:**
+1. **Try a call between two phones.** LiveKit calls work between two browsers (tested); try phone to phone, and phone to browser. Also try minimizing a call on the phone and locking the screen.
+2. **Calls while the app is closed.** An incoming call only rings while the app is open (a call already in progress keeps running in the background). Ringing a locked phone needs push notifications (item 5) plus CallKit/ConnectionService.
+3. **Legal review and contact details** for the Terms and Privacy Policy (section 4, item 22), and a way to delete your account from inside the app.
+4. **iOS build.** Needs a Mac with Xcode (the `Info.plist` permission texts are already in place). Android is done.
+5. **Push notifications** (Firebase Cloud Messaging, plus a Supabase Edge Function that sends a push when a notification row is inserted).
+6. **Reel processing.** Videos play as uploaded. Later: compression, HLS streaming and auto-thumbnails (for example with Mux or Cloudflare Stream).
+7. **Deep links.** Share links use `quad://…` on phones and `…/#/post/<id>` on web. Needs a real domain plus Android App Links and iOS Universal Links.
+8. **Small UI gaps:**
    - "Communities joined" on other people's profiles.
    - "Related discussions" list on the event page.
    - Room invite button (backend `invite_to_room` exists).
    - Reordering rooms (backend column `position` exists).
    - Editing a post after publishing (backend allows it; only comments have an Edit button).
    - Group chat photo and rename (backend allows it; no UI yet).
-8. **Platform admin screen** for reviewing reports outside communities (profile posts, DMs, users).
-9. **College email verification** to grant the verified badge automatically.
-10. **Automated app tests.** The database has 124 tests; the Flutter app has no unit or widget tests yet (the template test was removed because it tested the counter demo).
-11. **Theme choice is not remembered** between app launches (it resets to "Match my phone").
-12. **App name, logo and icons.** "Quad" is a placeholder name. The launcher icon and web favicon are still Flutter's defaults.
+9. **Platform admin screen** for reviewing reports outside communities (profile posts, DMs, users).
+10. **College email verification** to grant the verified badge automatically.
+11. **Automated app tests.** The database has 137 tests; the Flutter app has no unit or widget tests yet (the template test was removed because it tested the counter demo).
+12. **Theme choice is not remembered** between app launches (it resets to "Match my phone").
+13. **App name, logo and icons.** "Quad" is a placeholder name. The launcher icon and web favicon are still Flutter's defaults.
 
 ---
 
@@ -611,8 +654,8 @@ Routes: `/splash /welcome /sign-in /sign-up /forgot-password /onboarding`, tabs 
 |---|---|---|
 | `auth/data/auth_repository.dart` | 32 | Sign in, sign up (stores full name), resend confirmation, password reset, sign out. |
 | `auth/ui/brand.dart` | 44 | The "quad•" wordmark. |
-| `auth/ui/welcome_screen.dart` | 277 | First screen: animated collage built from real UI pieces (event ticket, community card, chat bubbles), headline, Create account / Sign in. |
-| `auth/ui/auth_screens.dart` | 480 | `SplashScreen` (loading/retry), `SignInScreen` (explains an unconfirmed email and offers "Resend confirmation email"), `SignUpScreen` (with a "Check your inbox" state when email confirmation is on: "I've confirmed, continue" signs you in, plus resend), `ForgotPasswordScreen`. |
+| `auth/ui/welcome_screen.dart` | 738 | First screen: a six-slide story (story bars, auto-advance, tap to skip, hold to pause) built from real UI pieces: event ticket, communities and role chips, reminder, sticker chat and room voice, reel and rankings, private profile and an anonymous comment. Create account / Sign in stay below. |
+| `auth/ui/auth_screens.dart` | 538 | `SplashScreen` (loading/retry), `SignInScreen` (explains an unconfirmed email and offers "Resend confirmation email"), `SignUpScreen` (required "I'm 13 or older and agree to…" checkbox linking the three legal pages; a "Check your inbox" state when email confirmation is on), `ForgotPasswordScreen`. |
 
 ### 9.9 features/onboarding
 
@@ -657,7 +700,7 @@ Routes: `/splash /welcome /sign-in /sign-up /forgot-password /onboarding`, tabs 
 | `communities/ui/community_tiles.dart` | 175 | `JoinButton` (Join / Request / Requested / Joined), `CommunityCard` (carousel card), `CommunityRow` (list row). |
 | `communities/ui/community_screen.dart` | 804 | Community page: coloured banner, icon, name, tags, Join/Manage; sections Posts (Hot/New/Top), Rooms (create, and long-press to edit, lock or delete, for people who can manage rooms), Events, About (description, numbered rules, tags). Private communities show a locked state. |
 | `communities/ui/create_community_screen.dart` | 222 | Create: icon upload, colour, name (auto link slug), tagline, description, category, topics, private switch, link to your college. |
-| `communities/ui/members_screen.dart` | 197 | Members list (highest rank first) with role chips. Tapping someone ranked below you offers what your permissions allow: edit roles, remove, ban; also approve/decline requests and lift bans. |
+| `communities/ui/members_screen.dart` | 230 | Members list (highest rank first) with role chips; tap opens a profile, staff long-press for actions. `showMemberActions` / `showMemberActionsFor` (shared with room chat and community posts): view profile, promote or change roles, kick, ban, approve/decline requests and lift bans, limited by your permissions and rank. |
 | `communities/ui/manage_community_screen.dart` | 265 | Staff tools, each tab shown only with the right permission: Reports queue, join Requests, Members, Roles, Banned, Details editor. |
 | `communities/ui/roles.dart` | 527 | `RoleChip` and `MemberRoleChips`; the Roles tab (create, edit, move up/down, delete); the role editor sheet (name, colour, permission switches, only the permissions you hold can be granted); the member roles sheet (tick boxes, roles at or above you are locked). |
 
@@ -679,7 +722,9 @@ Routes: `/splash /welcome /sign-in /sign-up /forgot-password /onboarding`, tabs 
 
 | File | Lines | What it contains |
 |---|---|---|
-| `reels/ui/reels_screen.dart` | 356 | Full-screen vertical video pager: autoplay/pause on tap, double-tap like with a heart burst, right-side buttons (like, comments in a sheet over the video, share, save, sound, more), author/community/caption/views. |
+| `reels/ui/reels_screen.dart` | 387 | Reels tab and the reusable `ReelPage`: autoplay/pause on tap, double-tap like, buttons (like, comments in a sheet over the video, share, Save (hold for playlists), sound, more), author/community/caption/views. Phone-shaped videos fill the screen; others are letterboxed. |
+| `reels/data/video_library.dart` | 107 | `Playlist` model and `VideoLibrary`: liked videos, my playlists (with "contains this video"), playlist videos, create/rename/delete playlists, add/remove videos; providers. |
+| `reels/ui/video_library_screens.dart` | 566 | `VideoPlayerScreen` (swipe through a list of videos), `VideoGrid`/`VideoThumb`, `LikedVideosScreen`, `PlaylistsScreen`, `PlaylistScreen` (Play all, remove, rename, delete) and `showPlaylistSheet` (tick playlists, create one). |
 | `reels/ui/create_reel_screen.dart` | 170 | Upload a reel: pick a video (≤50 MB, ≤90 s), optional cover, caption, topic, optional community. |
 
 ### 9.16 features/chat
@@ -690,7 +735,8 @@ Routes: `/splash /welcome /sign-in /sign-up /forgot-password /onboarding`, tabs 
 | `chat/data/chat_repository.dart` | 128 | Chat list, conversation info, members, messages (paged back), send, edit, unsend, react, mark read, mute, start direct chat, create group, add/remove members, rename, search, start and update calls. |
 | `chat/providers.dart` | 408 | `ChatList` (live chat list; unread counts), `unreadChatsProvider` (tab badge), `ConversationController` (history, live new/edited messages, typing indicator (skipped while anonymous), optimistic sending with retry, photo/file upload, reactions, edit, unsend; remembers which anonymous messages are yours), message search. |
 | `chat/ui/chat_list_screen.dart` | 254 | Chats tab: search, filters (All, Unread, Direct, Groups, Rooms), rows with avatar/online dot, preview, time, unread badge, muted icon; `TypingDots`. |
-| `chat/ui/conversation_screen.dart` | 1172 | The chat screen (also used by rooms through `RoomScreen`): header with online/typing status and call buttons; message bubbles grouped by sender and time, day separators, system lines, reply previews, photos, files, shared post/event cards, reactions, sent/sending/failed ticks, swipe-to-reply, long-press menu; composer with attach, reply/edit bar, and in rooms an anonymous toggle (locked on for private profiles). Anonymous messages show their alias. |
+| `chat/ui/conversation_screen.dart` | 1292 | The chat screen (also used by rooms through `RoomScreen`): header with online/typing status and call buttons; message bubbles grouped by sender and time, stickers without a bubble, day separators, system lines, reply previews, photos, files, shared post/event cards, reactions, ticks, swipe-to-reply, long-press menu (plus Member options and Remove message for room staff); composer with attach, sticker panel, reply/edit bar, and in rooms an anonymous toggle. |
+| `chat/ui/stickers.dart` | 298 | Sticker catalogue (Campus and Reactions packs), `StickerView` (die-cut label or big emoji, pops in), `StickerPanel` (tabs incl. Recent) and `recentStickersProvider` (saved on the device). |
 | `chat/ui/new_chat_screen.dart` | 190 | Start a chat: search people (suggestions when empty); "New group" mode with name and selected people. |
 | `chat/ui/conversation_info_screen.dart` | 144 | Chat details: mute, view profile, block (direct chats); members, remove people and leave (groups). |
 | `chat/ui/message_search_screen.dart` | 71 | Search all your messages. |
@@ -700,7 +746,9 @@ Routes: `/splash /welcome /sign-in /sign-up /forgot-password /onboarding`, tabs 
 | File | Lines | What it contains |
 |---|---|---|
 | `calls/call_service.dart` | 213 | `IncomingCall` (listens for ringing calls), `startCall`, and `CallSession`: gets a token from `call_token`, connects to LiveKit, turns on the mic (and camera for video calls), and handles mute, camera, flip camera, speakerphone and leave. `participantRef` and `cameraOf` helpers for the UI. |
-| `calls/ui/call_screen.dart` | 537 | Call screen for 1:1/group calls and room voice/video: incoming (Accept/Decline), ringing with a 45 s timeout that marks missed calls, live timer, full-screen or grid video, self-view, room voice grid with speaking rings, permission warnings, controls. |
+| `calls/ui/call_screen.dart` | 455 | The call screen, a view of the app-wide call (`activeCallProvider`): incoming Accept/Decline, timer, full-screen or grid video, self-view, room voice grid with speaking rings, permission warnings, controls, and ⌄ to minimize (falls back to Home when opened from a link). |
+| `calls/active_call.dart` | 295 | `activeCallProvider` and `OngoingCall`: the call lives here, not in the screen, so it keeps going while you use the app (ringing, accept/decline, 45 s no-answer, timer, hang-up rules). On Android it starts a foreground service so the call survives the background. |
+| `calls/ui/ongoing_call_bar.dart` | 73 | `OngoingCallFrame`: the green (or blue while ringing) return-to-call bar across the top of every screen, with hang-up. Wrapped around the whole app in `app.dart`. |
 | `calls/ui/room_voice_bar.dart` | 48 | Bar at the top of a room with Voice and Video buttons. |
 
 ### 9.18 features/profile
@@ -754,7 +802,8 @@ Routes: `/splash /welcome /sign-in /sign-up /forgot-password /onboarding`, tabs 
 | File | Lines | What it contains |
 |---|---|---|
 | `settings/theme_mode.dart` | 9 | Light / dark / match phone. |
-| `settings/ui/settings_screen.dart` | 178 | Settings (edit profile, saved, appearance, **Private profile** switch, blocked people, guidelines, college rankings, sign out) and `BlockedUsersScreen`. |
+| `settings/ui/settings_screen.dart` | 204 | Settings (account, **Your library**: saved posts, liked videos, playlists; appearance; **Private profile** switch; blocked people; college rankings; **About**: guidelines, terms, privacy; sign out) and `BlockedUsersScreen`. |
+| `legal/legal_screen.dart` | 382 | Terms of Service, Privacy Policy and Community Guidelines (`LegalDoc`, `legalVersion`) and the page that shows them. |
 
 ### 9.24 Other app files
 
@@ -790,8 +839,9 @@ Each migration is applied once, in order, and recorded in `supabase_migrations.s
 | `migrations/20261004000200_private_profiles_anonymity.sql` | `profiles.is_private`; `is_anonymous` and `anon_name` on posts, comments and messages; table `message_authors`. Hides the author columns from students, adds alias triggers (fresh `anonymous_<adjective>_<animal>_<number>` each time), `can_see_profile` (private profiles visible to people they follow), privacy rules for posts, follows, achievements, reactions and guest lists, and rebuilt `profile_summaries`, `post_details`, `comment_details`, `report_details` and notification triggers that never leak the real author. |
 | `migrations/20261004000300_create_post_anonymous.sql` | `create_post` gains `p_is_anonymous`. |
 | `migrations/20261004000400_livekit_calls.sql` | `public.call_token(p_call, p_room)`: checks you may join, then builds and signs a LiveKit JWT inside Postgres (`pgcrypto` HMAC-SHA256) with the secret from Supabase Vault. Helpers `private.base64url`, `private.livekit_secret`, `private.livekit_jwt` (the last two can't be called by students). |
+| `migrations/20261004000500_stickers_playlists.sql` | Sticker messages (new `sticker` kind with an id check, "Sticker" chat preview, anonymous in rooms), `liked_videos()`, tables `playlists` and `playlist_items` (private to the owner, videos only, size limits), `my_playlists(p_post)` and `playlist_videos()`. |
 | `seed.sql` | 50 Indian colleges (IITs, NITs, IIITs, BITS, VIT, SRM, Anna University, DU, JNU…) with city, state, type and founding year. Safe to re-run. |
-| `setup.sql` | All 15 migrations plus the seed in one file, for pasting into the Supabase SQL editor on a brand-new project. (Calls also need `npm run livekit:setup`.) |
+| `setup.sql` | All 16 migrations plus the seed in one file, for pasting into the Supabase SQL editor on a brand-new project. (Calls also need `npm run livekit:setup`.) |
 
 ---
 
@@ -812,13 +862,13 @@ Each migration is applied once, in order, and recorded in `supabase_migrations.s
 
 ## 12. Database reference
 
-### 12.1 Tables (32)
+### 12.1 Tables (34)
 
 | Group | Tables |
 |---|---|
 | People | `profiles`, `follows`, `blocks`, `achievements`, `colleges`, `college_stats`, `ranking_pillars` |
 | Communities | `communities`, `community_members`, `community_roles`, `community_member_roles`, `rooms` |
-| Content | `posts`, `poll_options`, `poll_votes`, `post_reactions`, `comments`, `comment_likes`, `saved_posts`, `post_follows` |
+| Content | `posts`, `poll_options`, `poll_votes`, `post_reactions`, `comments`, `comment_likes`, `saved_posts`, `post_follows`, `playlists`, `playlist_items` |
 | Events | `events`, `event_registrations`, `event_updates` |
 | Chat and calls | `conversations`, `conversation_members`, `messages`, `message_authors`, `message_reactions`, `calls` |
 | System | `notifications`, `reports`, `mod_actions` |
@@ -948,12 +998,13 @@ The goal was an app that looks designed, not generated: strong type, one confide
 
 | Check | Result |
 |---|---|
-| `npm run db:check`: all migrations in an in-memory Postgres + 124 behaviour checks | **124 passed, 0 failed** |
-| Migrations applied to your Supabase project | 15/15 applied |
+| `npm run db:check`: all migrations in an in-memory Postgres + 137 behaviour checks | **137 passed, 0 failed** |
+| Migrations applied to your Supabase project | 16/16 applied |
 | Demo login and key functions against your real project (Node script) | Login OK; feed, chat list and rankings return data. Roles: member lists with roles, role counts, create/update/delete role and the duplicate-name error all work through the real API |
 | Roles and anonymity screens in headless Chrome (as Aarav) | Manage tabs, Roles tab, role actions, members with Owner chip, member role picker, room hint, composer with all communities and the anonymous switch, Settings privacy switch; no console errors |
 | LiveKit calls (two headless Chrome windows with fake camera/mic, as Aarav and Diya) | Room voice and room video: both connected, LiveKit Cloud listed both with 1 and 2 tracks. 1:1 call: Diya's app rang on its own, Accept connected both, hanging up marked the call ended and closed Diya's screen. A token minted by the database was also accepted by LiveKit's own JS SDK. |
 | Android build with LiveKit | APK built and installed on the phone; app starts with no crash in the log |
+| Stickers, library, long-press, background call, welcome story, legal (headless Chrome, as Aarav) | Sticker panel opens and a sticker sends with a delivered tick; Liked videos grid; "Save to playlist" sheet from holding Save on a reel; holding a member shows Profile/Promote/Kick/Ban; minimizing a room call shows the green bar on Home and tapping it returns to the same call; story slides advance on tap; sign-up shows the agreement; Terms page renders. No console errors. |
 | Bug found this way and fixed | The composer's "Post to" sheet listed no communities if opened before they had loaded (same fix in the event editor) |
 | `flutter analyze` | **0 errors, 0 warnings** (24 style hints) |
 | `flutter build web --release` | Builds successfully |

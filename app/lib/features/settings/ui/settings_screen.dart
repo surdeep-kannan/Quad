@@ -10,6 +10,7 @@ import '../../../core/widgets/app_icons.dart';
 import '../../../core/widgets/sheets.dart';
 import '../../../core/widgets/states.dart';
 import '../../auth/data/auth_repository.dart';
+import '../../legal/legal_screen.dart';
 import '../../posts/ui/post_card.dart';
 import '../../profile/data/profile_repository.dart';
 import '../../profile/providers.dart';
@@ -42,17 +43,30 @@ class SettingsScreen extends ConsumerWidget {
             title: const Text('Edit profile'),
             onTap: () => context.push('/profile/edit'),
           ),
-          ListTile(
-            leading: const Icon(AppIcons.bookmark),
-            title: const Text('Saved posts'),
-            onTap: () => context.push('/saved'),
-          ),
           if (me != null)
             ListTile(
               leading: const Icon(AppIcons.at),
               title: const Text('Username'),
               subtitle: Text('@${me.username}'),
             ),
+          section('Your library'),
+          ListTile(
+            leading: const Icon(AppIcons.bookmark),
+            title: const Text('Saved posts'),
+            onTap: () => context.push('/saved'),
+          ),
+          ListTile(
+            leading: const Icon(AppIcons.heart),
+            title: const Text('Liked videos'),
+            subtitle: const Text('Reels and videos you liked'),
+            onTap: () => context.push('/library/liked'),
+          ),
+          ListTile(
+            leading: const Icon(AppIcons.playlist),
+            title: const Text('Playlists'),
+            subtitle: const Text('Your own collections of reels and videos'),
+            onTap: () => context.push('/library/playlists'),
+          ),
           section('Appearance'),
           for (final (value, label, icon) in [
             (ThemeMode.system, 'Match my phone', AppIcons.device),
@@ -94,16 +108,28 @@ class SettingsScreen extends ConsumerWidget {
             title: const Text('Blocked people'),
             onTap: () => context.push('/settings/blocked'),
           ),
-          ListTile(
-            leading: const Icon(AppIcons.shield),
-            title: const Text('Community guidelines'),
-            subtitle: const Text('Be kind, no harassment, no spam, no hate. Report anything that feels off.'),
-          ),
           section('Discover'),
           ListTile(
             leading: const Icon(AppIcons.ranking),
             title: const Text('College rankings'),
             onTap: () => context.push('/colleges'),
+          ),
+          section('About'),
+          ListTile(
+            leading: const Icon(AppIcons.shield),
+            title: const Text('Community guidelines'),
+            subtitle: const Text('Be kind, respect anonymity, no spam or hate.'),
+            onTap: () => context.push(LegalDoc.guidelines.route),
+          ),
+          ListTile(
+            leading: const Icon(AppIcons.document),
+            title: const Text('Terms of service'),
+            onTap: () => context.push(LegalDoc.terms.route),
+          ),
+          ListTile(
+            leading: const Icon(AppIcons.lock),
+            title: const Text('Privacy policy'),
+            onTap: () => context.push(LegalDoc.privacy.route),
           ),
           const SizedBox(height: Space.xl),
           Padding(

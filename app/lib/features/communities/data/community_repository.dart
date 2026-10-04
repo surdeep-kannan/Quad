@@ -124,6 +124,17 @@ class CommunityRepository {
     return members;
   }
 
+  /// One person's membership (any status), or null if they never joined.
+  Future<CommunityMember?> member(String communityId, String userId) async {
+    final row = await _client
+        .from('community_members')
+        .select(_memberFields)
+        .eq('community_id', communityId)
+        .eq('user_id', userId)
+        .maybeSingle();
+    return row == null ? null : CommunityMember.fromJson(row);
+  }
+
   /// Roles, highest rank first, with how many people hold each.
   Future<List<CommunityRole>> roles(String communityId) async {
     final rows = await _client

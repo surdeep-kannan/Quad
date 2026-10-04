@@ -221,9 +221,12 @@ class Message {
       'file' => '📎 ${attachments.firstOrNull?.name ?? 'File'}',
       'post' => 'Shared a post',
       'event' => 'Shared an event',
+      'sticker' => 'Sticker',
       _ => body ?? '',
     };
   }
+
+  bool get isSticker => kind == 'sticker';
 
   Message copyWith({
     String? body,

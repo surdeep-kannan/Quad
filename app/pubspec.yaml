@@ -35,6 +35,8 @@ dependencies:
   url_launcher: ^6.3.2
   uuid: ^4.6.0
   livekit_client: ^2.13.0
+  shared_preferences: ^2.5.5
+  flutter_foreground_task: ^11.0.3
 
 dev_dependencies:
   flutter_test:

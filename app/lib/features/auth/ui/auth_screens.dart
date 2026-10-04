@@ -10,6 +10,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icons.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../core/widgets/sheets.dart';
+import '../../legal/legal_screen.dart';
 import '../../profile/providers.dart';
 import '../data/auth_repository.dart';
 import 'brand.dart';
@@ -206,6 +207,7 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   bool _busy = false;
+  bool _agreed = false;
   String? _error;
   String? _confirmEmailFor;
   String _confirmPassword = '';
@@ -220,6 +222,10 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
 
   Future<void> _submit() async {
     if (!_form.currentState!.validate()) return;
+    if (!_agreed) {
+      setState(() => _error = 'Please agree to the Terms, Privacy Policy and Community Guidelines to continue.');
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
@@ -285,8 +291,10 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
             ),
           ),
         ),
+        const SizedBox(height: Space.md),
+        _Agreement(value: _agreed, onChanged: (value) => setState(() => _agreed = value)),
         if (_error != null) ...[const SizedBox(height: Space.md), _ErrorNote(_error!)],
-        const SizedBox(height: Space.xxl),
+        const SizedBox(height: Space.xl),
         AppButton(label: 'Create account', expand: true, loading: _busy, onPressed: _submit),
         const SizedBox(height: Space.lg),
         Row(
@@ -475,6 +483,56 @@ class _ErrorNote extends StatelessWidget {
           Expanded(child: Text(message, style: context.text.bodyMedium!.copyWith(color: c.danger))),
         ],
       ),
+    );
+  }
+}
+
+/// "I agree" checkbox with links to the Terms, Privacy Policy and Guidelines.
+class _Agreement extends StatelessWidget {
+  const _Agreement({required this.value, required this.onChanged});
+
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final style = context.text.bodySmall!.copyWith(color: c.inkMuted, height: 1.45);
+    Widget link(LegalDoc doc) => GestureDetector(
+      onTap: () => context.push(doc.route),
+      child: Text(
+        doc.title,
+        style: style.copyWith(color: c.accentInk, fontWeight: FontWeight.w600, decoration: TextDecoration.underline),
+      ),
+    );
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox.square(
+          dimension: 32,
+          child: Checkbox(value: value, onChanged: (checked) => onChanged(checked ?? false)),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: GestureDetector(
+            onTap: () => onChanged(!value),
+            child: Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Wrap(
+                children: [
+                  Text('I\'m 13 or older and agree to the ', style: style),
+                  link(LegalDoc.terms),
+                  Text(', ', style: style),
+                  link(LegalDoc.privacy),
+                  Text(' and ', style: style),
+                  link(LegalDoc.guidelines),
+                  Text('.', style: style),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
