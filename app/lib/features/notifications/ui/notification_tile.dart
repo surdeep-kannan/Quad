@@ -95,7 +95,10 @@ class NotificationTile extends ConsumerWidget {
               clipBehavior: Clip.none,
               children: [
                 if (actor != null)
-                  UserAvatar(name: actor.fullName, url: actor.avatarUrl, size: 44)
+                  ProfileTap(
+                    user: actor,
+                    child: UserAvatar(name: actor.fullName, url: actor.avatarUrl, size: 44),
+                  )
                 else if (_alias != null)
                   AnonymousAvatar(alias: _alias!, size: 44)
                 else if (notification.community != null)

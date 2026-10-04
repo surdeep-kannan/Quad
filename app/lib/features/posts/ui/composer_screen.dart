@@ -12,6 +12,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icons.dart';
 import '../../../core/widgets/avatars.dart';
 import '../../../core/widgets/chips.dart';
+import '../../../core/widgets/photo_adjust.dart';
 import '../../../core/widgets/sheets.dart';
 import '../../communities/data/community.dart';
 import '../../communities/providers.dart';
@@ -20,6 +21,7 @@ import '../../profile/providers.dart';
 import '../data/post.dart';
 import '../data/post_repository.dart';
 import '../providers.dart';
+import 'post_music.dart';
 
 class ComposerScreen extends ConsumerStatefulWidget {
   const ComposerScreen({super.key, this.communityId, this.initialType, this.eventId});
@@ -44,6 +46,9 @@ class _ComposerScreenState extends ConsumerState<ComposerScreen> {
   Duration _pollDuration = const Duration(days: 3);
   bool _anonymous = false;
   bool _posting = false;
+
+  /// Background music for a photo post.
+  MediaItem? _music;
 
   @override
   void initState() {
@@ -100,11 +105,27 @@ class _ComposerScreenState extends ConsumerState<ComposerScreen> {
 
   Future<void> _pickImages() async {
     final picked = await MediaPicker.images(limit: 4 - _images.length);
-    if (picked.isEmpty) return;
+    if (picked.isEmpty || !mounted) return;
+    // A single photo goes straight to cropping; with several, each thumbnail
+    // has an Adjust button. Cancelling keeps the photo as it was.
+    final photos = picked.length == 1
+        ? [await adjustPhoto(context, picked.first, maxSide: 2048) ?? picked.first]
+        : picked;
+    if (!mounted) return;
     setState(() {
-      _images.addAll(picked.take(4 - _images.length));
+      _images.addAll(photos.take(4 - _images.length));
       if (_type == PostType.text) _type = PostType.image;
     });
+  }
+
+  Future<void> _adjust(int index) async {
+    final adjusted = await adjustPhoto(context, _images[index], maxSide: 2048);
+    if (adjusted != null && mounted) setState(() => _images[index] = adjusted);
+  }
+
+  Future<void> _addMusic() async {
+    final music = await pickPostMusic(context, ref, current: _music);
+    if (music != null && mounted) setState(() => _music = music);
   }
 
   Future<void> _pickVideo() async {
@@ -177,6 +198,8 @@ class _ComposerScreenState extends ConsumerState<ComposerScreen> {
           final url = await storage.uploadMedia(image, folder: 'posts');
           media.add(MediaItem(url: url, type: 'image', width: image.width, height: image.height));
         }
+        // Music goes after the photos (it's only for photo posts).
+        if (_music != null && media.isNotEmpty) media.add(_music!);
       }
       final id = await ref
           .read(postRepositoryProvider)
@@ -197,9 +220,15 @@ class _ComposerScreenState extends ConsumerState<ComposerScreen> {
       }
       if (_community != null) ref.invalidate(communityFeedProvider);
       if (!mounted) return;
-      context.pop();
       showToast(context, 'Posted', icon: AppIcons.checkCircle);
-      context.push('/post/$id');
+      // Replace the composer with the new post (works even when the composer
+      // was opened from a link, with nothing behind it).
+      if (context.canPop()) {
+        context.pop();
+        context.push('/post/$id');
+      } else {
+        context.go('/post/$id');
+      }
     } catch (error) {
       if (mounted) showToast(context, friendlyError(error), error: true);
     } finally {
@@ -407,9 +436,31 @@ class _ComposerScreenState extends ConsumerState<ComposerScreen> {
                 separatorBuilder: (_, _) => const SizedBox(width: 8),
                 itemBuilder: (_, i) => Stack(
                   children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(Radii.md),
-                      child: Image.memory(_images[i].bytes, width: 110, height: 110, fit: BoxFit.cover),
+                    GestureDetector(
+                      onTap: () => _adjust(i),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(Radii.md),
+                        child: Image.memory(_images[i].bytes, width: 110, height: 110, fit: BoxFit.cover),
+                      ),
+                    ),
+                    Positioned(
+                      left: 4,
+                      bottom: 4,
+                      child: GestureDetector(
+                        onTap: () => _adjust(i),
+                        child: Container(
+                          padding: const EdgeInsets.fromLTRB(6, 3, 8, 3),
+                          decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(12)),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(AppIcons.crop, size: 13, color: Colors.white),
+                              SizedBox(width: 4),
+                              Text('Adjust', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
                     Positioned(
                       top: 4,
@@ -426,6 +477,12 @@ class _ComposerScreenState extends ConsumerState<ComposerScreen> {
                   ],
                 ),
               ),
+            ),
+            const SizedBox(height: Space.sm),
+            _MusicRow(
+              music: _music,
+              onAdd: _addMusic,
+              onRemove: () => setState(() => _music = null),
             ),
           ],
           if (_type == PostType.video) ...[
@@ -493,8 +550,15 @@ class _ComposerScreenState extends ConsumerState<ComposerScreen> {
                           ? null
                           : () async {
                               final photo = await MediaPicker.image(source: ImageSource.camera);
-                              if (photo != null) setState(() => _images.add(photo));
+                              if (photo == null || !context.mounted) return;
+                              final adjusted = await adjustPhoto(context, photo, maxSide: 2048);
+                              if (mounted) setState(() => _images.add(adjusted ?? photo));
                             },
+                    ),
+                    IconButton(
+                      tooltip: 'Add music',
+                      icon: Icon(_music == null ? AppIcons.music : AppIcons.musicFill),
+                      onPressed: _images.isEmpty ? null : _addMusic,
                     ),
                     const Spacer(),
                     Text('${_images.length}/4 photos', style: context.text.bodySmall),
@@ -584,6 +648,62 @@ class _BareField extends StatelessWidget {
         enabledBorder: InputBorder.none,
         focusedBorder: InputBorder.none,
         contentPadding: const EdgeInsets.symmetric(vertical: 6),
+      ),
+    );
+  }
+}
+
+/// The photo post's music: "Add music", or the chosen song with edit/remove.
+class _MusicRow extends StatelessWidget {
+  const _MusicRow({required this.music, required this.onAdd, required this.onRemove});
+
+  final MediaItem? music;
+  final VoidCallback onAdd;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final music = this.music;
+    if (music == null) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          onPressed: onAdd,
+          icon: const Icon(AppIcons.music, size: 18),
+          label: const Text('Add music'),
+        ),
+      );
+    }
+    final start = (music.startMs ?? 0) ~/ 1000;
+    return Material(
+      color: c.surfaceMuted,
+      borderRadius: BorderRadius.circular(Radii.md),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(Radii.md),
+        onTap: onAdd,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+          child: Row(
+            children: [
+              Icon(AppIcons.musicFill, color: c.accent, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(music.title ?? 'Original audio', style: context.text.titleSmall, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text(
+                      'From ${start ~/ 60}:${(start % 60).toString().padLeft(2, '0')} · ${(music.durationMs ?? 30000) ~/ 1000} s · tap to change',
+                      style: context.text.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(tooltip: 'Remove music', icon: const Icon(AppIcons.close, size: 18), onPressed: onRemove),
+            ],
+          ),
+        ),
       ),
     );
   }

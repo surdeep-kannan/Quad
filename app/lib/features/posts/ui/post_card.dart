@@ -30,6 +30,7 @@ import '../../profile/data/profile.dart';
 import '../../reels/ui/video_library_screens.dart';
 import '../data/post.dart';
 import '../providers.dart';
+import 'post_music.dart';
 import 'post_video.dart';
 
 /// A post in a feed. Tapping opens the discussion.
@@ -93,7 +94,22 @@ class PostCard extends ConsumerWidget {
           SizedBox(height: live.title != null ? 6 : 8),
           RichBody(live.body!, maxLines: inDetail ? null : 6, style: context.text.bodyMedium),
         ],
-        if (live.images.isNotEmpty) ...[const SizedBox(height: 12), MediaGrid(media: live.images)],
+        if (live.images.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          if (live.music == null)
+            MediaGrid(media: live.images)
+          else
+            Stack(
+              children: [
+                MediaGrid(media: live.images),
+                Positioned(
+                  left: 10,
+                  bottom: 10,
+                  child: PostMusicBadge(postId: live.id, music: live.music!, autoplay: inDetail),
+                ),
+              ],
+            ),
+        ],
         if (live.video != null) ...[
           const SizedBox(height: 12),
           PostVideo(media: live.video!, autoplay: inDetail, fullHeight: inDetail),

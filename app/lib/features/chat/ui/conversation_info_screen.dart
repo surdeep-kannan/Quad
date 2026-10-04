@@ -59,9 +59,19 @@ class ConversationInfoScreen extends ConsumerWidget {
           return ListView(
             children: [
               const SizedBox(height: Space.lg),
-              Center(child: UserAvatar(name: title, url: isGroup ? info.avatarUrl : other?.avatarUrl, size: 88)),
+              Center(
+                child: ProfileTap(
+                  user: isGroup ? null : other,
+                  child: UserAvatar(name: title, url: isGroup ? info.avatarUrl : other?.avatarUrl, size: 88),
+                ),
+              ),
               const SizedBox(height: Space.md),
-              Center(child: Text(title, style: context.text.headlineMedium)),
+              Center(
+                child: ProfileTap(
+                  user: isGroup ? null : other,
+                  child: Text(title, style: context.text.headlineMedium),
+                ),
+              ),
               if (isGroup) Center(child: Text(plural(info.members.length, 'member'), style: context.text.bodySmall)),
               const SizedBox(height: Space.lg),
               SwitchListTile(

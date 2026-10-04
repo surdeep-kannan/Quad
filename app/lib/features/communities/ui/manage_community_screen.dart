@@ -139,7 +139,14 @@ class _ReportQueue extends ConsumerWidget {
                   if (report.targetUser != null)
                     Row(
                       children: [
-                        UserAvatar(name: report.targetUser!.fullName, url: report.targetUser!.avatarUrl, size: 24),
+                        ProfileTap(
+                          user: report.targetUser,
+                          child: UserAvatar(
+                            name: report.targetUser!.fullName,
+                            url: report.targetUser!.avatarUrl,
+                            size: 24,
+                          ),
+                        ),
                         const SizedBox(width: 8),
                         Text(report.targetUser!.fullName, style: context.text.titleSmall),
                       ],

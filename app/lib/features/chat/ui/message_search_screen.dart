@@ -58,7 +58,10 @@ class _MessageSearchScreenState extends ConsumerState<MessageSearchScreen> {
                   itemBuilder: (_, i) {
                     final hit = hits[i];
                     return ListTile(
-                      leading: UserAvatar(name: hit.sender.fullName, url: hit.sender.avatarUrl, size: 40),
+                      leading: ProfileTap(
+                        user: hit.sender,
+                        child: UserAvatar(name: hit.sender.fullName, url: hit.sender.avatarUrl, size: 40),
+                      ),
                       title: Row(
                         children: [
                           Expanded(child: Text(hit.conversationTitle, maxLines: 1, overflow: TextOverflow.ellipsis)),

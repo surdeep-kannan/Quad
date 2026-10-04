@@ -12,7 +12,9 @@ import '../../../core/widgets/app_icons.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../core/widgets/avatars.dart';
 import '../../../core/widgets/chips.dart';
+import '../../../core/widgets/photo_adjust.dart';
 import '../../../core/widgets/sheets.dart';
+import '../../colleges/ui/college_picker.dart';
 import '../data/profile.dart';
 import '../data/profile_repository.dart';
 import '../providers.dart';
@@ -34,8 +36,26 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   late final _skills = TextEditingController(text: _me.skills.join(', '));
   late int? _year = _me.yearOfStudy;
   late final Set<String> _interests = {..._me.interests};
+  late String? _collegeId = _me.collegeId;
+  late String? _collegeName = _me.college?.name;
   PickedFile? _photo;
   bool _busy = false;
+
+  Future<void> _pickPhoto() async {
+    final photo = await MediaPicker.image(maxSide: 2048);
+    if (photo == null || !mounted) return;
+    final adjusted = await adjustPhoto(context, photo, avatar: true, maxSide: 720);
+    if (adjusted != null) setState(() => _photo = adjusted);
+  }
+
+  Future<void> _pickCollege() async {
+    final choice = await pickCollege(context, currentId: _collegeId);
+    if (choice == null) return;
+    setState(() {
+      _collegeId = choice.college?.id;
+      _collegeName = choice.college?.name;
+    });
+  }
 
   @override
   void dispose() {
@@ -62,6 +82,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         'full_name': _name.text.trim(),
         'username': username,
         'bio': _bio.text.trim().isEmpty ? null : _bio.text.trim(),
+        'college_id': _collegeId,
         'department': _department.text.trim().isEmpty ? null : _department.text.trim(),
         'year_of_study': _year,
         'interests': _interests.toList(),
@@ -100,10 +121,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
           children: [
             Center(
               child: GestureDetector(
-                onTap: () async {
-                  final photo = await MediaPicker.image(maxSide: 1024);
-                  if (photo != null) setState(() => _photo = photo);
-                },
+                onTap: _pickPhoto,
                 child: Column(
                   children: [
                     _photo == null
@@ -121,6 +139,33 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
             AppTextField(label: 'Username', controller: _username, prefixIcon: AppIcons.at, validator: Validators.username),
             const SizedBox(height: Space.lg),
             AppTextField(label: 'Bio', controller: _bio, maxLines: 3, maxLength: 280),
+            const SizedBox(height: Space.lg),
+            Text('College', style: context.text.labelMedium!.copyWith(color: c.inkMuted)),
+            const SizedBox(height: Space.sm),
+            Material(
+              color: c.surfaceMuted,
+              borderRadius: BorderRadius.circular(Radii.md),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(Radii.md),
+                onTap: _pickCollege,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                  child: Row(
+                    children: [
+                      Icon(AppIcons.graduation, size: 20, color: c.inkMuted),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          _collegeName ?? 'Add your college',
+                          style: context.text.bodyLarge!.copyWith(color: _collegeName == null ? c.inkSubtle : c.ink),
+                        ),
+                      ),
+                      Text('Change', style: context.text.labelLarge!.copyWith(color: c.accentInk)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
             const SizedBox(height: Space.lg),
             AppTextField(label: 'Department', controller: _department),
             const SizedBox(height: Space.lg),

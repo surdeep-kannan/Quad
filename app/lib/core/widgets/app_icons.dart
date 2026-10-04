@@ -85,6 +85,10 @@ abstract final class AppIcons {
   static const document = IconData(0xe23a, fontFamily: 'PhosphorRegular');
   static const scales = IconData(0xe750, fontFamily: 'PhosphorRegular');
   static const minimize = IconData(0xe136, fontFamily: 'PhosphorBold');
+  static const crop = IconData(0xe1d4, fontFamily: 'PhosphorRegular');
+  static const rotate = IconData(0xe036, fontFamily: 'PhosphorRegular');
+  static const music = IconData(0xe33c, fontFamily: 'PhosphorRegular');
+  static const musicFill = IconData(0xe33c, fontFamily: 'PhosphorFill');
   static const verified = IconData(0xe606, fontFamily: 'PhosphorFill');
   static const shield = IconData(0xe40c, fontFamily: 'PhosphorRegular');
 

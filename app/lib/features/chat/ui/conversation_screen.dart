@@ -461,8 +461,12 @@ class _Header extends ConsumerWidget {
     final String title;
     final Widget avatar;
     String subtitle;
+    // Tapping the header opens the person (DMs), the group's details, or the room's community.
+    VoidCallback? onTap;
 
     if (room != null || info.type == 'room') {
+      final slug = info.room?.community.slug;
+      if (slug != null) onTap = () => context.push('/c/$slug');
       final community = info.room?.community;
       title = '#${room?.name ?? info.title ?? 'room'}';
       avatar = CommunityAvatar(
@@ -478,14 +482,16 @@ class _Header extends ConsumerWidget {
       final online = other != null && ref.watch(onlineUsersProvider).contains(other.id);
       avatar = UserAvatar(name: title, url: other?.avatarUrl, size: 36, online: online);
       subtitle = online ? 'Online' : lastSeen(other?.lastSeenAt);
+      if (other != null && other.username.isNotEmpty) onTap = () => context.push('/u/${other.username}');
     } else {
       title = info.title ?? 'Group';
       avatar = UserAvatar(name: title, url: info.avatarUrl, size: 36);
       subtitle = plural(info.members.length, 'member');
+      onTap = () => context.push('/chat/${info.id}/info');
     }
     if (state.typing.isNotEmpty) subtitle = 'typing…';
 
-    return Row(
+    final header = Row(
       children: [
         avatar,
         const SizedBox(width: 10),
@@ -506,6 +512,7 @@ class _Header extends ConsumerWidget {
         ),
       ],
     );
+    return onTap == null ? header : GestureDetector(behavior: HitTestBehavior.opaque, onTap: onTap, child: header);
   }
 }
 
@@ -888,11 +895,14 @@ class _BubbleState extends State<_Bubble> {
                         if (widget.showName && widget.sender != null)
                           Padding(
                             padding: const EdgeInsets.only(left: 12, bottom: 3),
-                            child: Text(
-                              widget.sender!.fullName,
-                              style: context.text.labelSmall!.copyWith(
-                                color: c.inkMuted,
-                                fontStyle: widget.sender!.isAnonymous ? FontStyle.italic : null,
+                            child: ProfileTap(
+                              user: widget.sender,
+                              child: Text(
+                                widget.sender!.fullName,
+                                style: context.text.labelSmall!.copyWith(
+                                  color: c.inkMuted,
+                                  fontStyle: widget.sender!.isAnonymous ? FontStyle.italic : null,
+                                ),
                               ),
                             ),
                           ),

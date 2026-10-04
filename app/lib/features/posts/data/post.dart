@@ -235,7 +235,10 @@ class Post {
   bool get pollClosed => pollEndsAt != null && pollEndsAt!.isBefore(DateTime.now());
   int get totalVotes => pollOptions.fold(0, (sum, o) => sum + o.votes);
   MediaItem? get video => media.where((m) => m.isVideo).firstOrNull;
-  List<MediaItem> get images => media.where((m) => !m.isVideo).toList();
+  List<MediaItem> get images => media.where((m) => m.isImage).toList();
+
+  /// Background music on a photo post.
+  MediaItem? get music => media.where((m) => m.isAudio).firstOrNull;
 
   /// The two most used reactions, most popular first.
   List<Reaction> get topReactions {

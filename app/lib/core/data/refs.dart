@@ -90,6 +90,8 @@ class MediaItem {
     this.height,
     this.thumbnailUrl,
     this.durationMs,
+    this.title,
+    this.startMs,
   });
 
   factory MediaItem.fromJson(Json json) => MediaItem(
@@ -99,16 +101,28 @@ class MediaItem {
         height: (json['height'] as num?)?.toInt(),
         thumbnailUrl: stringOrNull(json['thumbnail_url']),
         durationMs: (json['duration_ms'] as num?)?.toInt(),
+        title: stringOrNull(json['title']),
+        startMs: (json['start_ms'] as num?)?.toInt(),
       );
 
   final String url;
+
+  /// 'image', 'video' or 'audio' (a photo post's music).
   final String type;
   final int? width;
   final int? height;
   final String? thumbnailUrl;
+
+  /// For music: how long the clip plays.
   final int? durationMs;
 
+  /// For music: the song's name and where in it the clip starts.
+  final String? title;
+  final int? startMs;
+
   bool get isVideo => type == 'video';
+  bool get isImage => type == 'image';
+  bool get isAudio => type == 'audio';
 
   double? get aspectRatio => width != null && height != null && height! > 0 ? width! / height! : null;
 
@@ -119,5 +133,7 @@ class MediaItem {
         'height': ?height,
         'thumbnail_url': ?thumbnailUrl,
         'duration_ms': ?durationMs,
+        'title': ?title,
+        'start_ms': ?startMs,
       };
 }

@@ -141,7 +141,11 @@ class _ComposerPrompt extends ConsumerWidget {
       decoration: BoxDecoration(color: c.surface, border: Border(bottom: BorderSide(color: c.line))),
       child: Row(
         children: [
-          if (me != null) UserAvatar(name: me.fullName, url: me.avatarUrl, size: 36),
+          if (me != null)
+            ProfileTap(
+              user: me.ref,
+              child: UserAvatar(name: me.fullName, url: me.avatarUrl, size: 36),
+            ),
           const SizedBox(width: 12),
           Expanded(
             child: GestureDetector(

@@ -54,8 +54,13 @@ abstract final class MediaPicker {
     return file == null ? null : _read(file);
   }
 
-  static Future<PickedFile?> anyFile() async {
-    final file = await FilePicker.pickFile();
+  static Future<PickedFile?> anyFile() => _file(FileType.any);
+
+  /// A song or other audio file from the device.
+  static Future<PickedFile?> audio() => _file(FileType.audio);
+
+  static Future<PickedFile?> _file(FileType type) async {
+    final file = await FilePicker.pickFile(type: type);
     if (file == null) return null;
     final bytes = await file.readAsBytes();
     final mime = lookupMimeType(file.name, headerBytes: bytes.take(32).toList()) ?? 'application/octet-stream';
@@ -67,22 +72,32 @@ abstract final class MediaPicker {
     final mime = file.mimeType ??
         lookupMimeType(file.name, headerBytes: bytes.take(32).toList()) ??
         'application/octet-stream';
-    int? width;
-    int? height;
-    if (measure && mime.startsWith('image/')) {
-      try {
-        final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
-        final descriptor = await ui.ImageDescriptor.encoded(buffer);
-        width = descriptor.width;
-        height = descriptor.height;
-        descriptor.dispose();
-        buffer.dispose();
-      } catch (_) {
-        // Dimensions are a layout hint only.
-      }
-    }
+    final size = measure && mime.startsWith('image/') ? await measureImage(bytes) : null;
     final name = file.name.isNotEmpty ? file.name : 'upload.${extensionFromMime(mime) ?? 'bin'}';
-    return PickedFile(bytes: bytes, name: name, mimeType: mime, width: width, height: height);
+    return PickedFile(bytes: bytes, name: name, mimeType: mime, width: size?.$1, height: size?.$2);
+  }
+}
+
+/// An image's (width, height), or null if it can't be read.
+Future<(int, int)?> measureImage(Uint8List bytes) async {
+  try {
+    // Reads only the header; not available on the web.
+    final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+    final descriptor = await ui.ImageDescriptor.encoded(buffer);
+    final size = (descriptor.width, descriptor.height);
+    descriptor.dispose();
+    buffer.dispose();
+    return size;
+  } catch (_) {}
+  try {
+    final codec = await ui.instantiateImageCodec(bytes);
+    final frame = await codec.getNextFrame();
+    final size = (frame.image.width, frame.image.height);
+    frame.image.dispose();
+    codec.dispose();
+    return size;
+  } catch (_) {
+    return null;
   }
 }
 

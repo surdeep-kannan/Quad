@@ -1,3 +1,4 @@
+import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../data/refs.dart';
@@ -109,6 +110,30 @@ class AnonymousAvatar extends StatelessWidget {
         decoration: BoxDecoration(color: color.withValues(alpha: 0.18), shape: BoxShape.circle),
         alignment: Alignment.center,
         child: Icon(AppIcons.anonymous, size: size * 0.52, color: color),
+      ),
+    );
+  }
+}
+
+/// Makes [child] (usually an avatar or a name) open [user]'s profile when
+/// tapped. Anonymous people and unknown usernames aren't tappable.
+class ProfileTap extends StatelessWidget {
+  const ProfileTap({super.key, required this.user, required this.child});
+
+  final UserRef? user;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final user = this.user;
+    if (user == null || user.isAnonymous || user.username.isEmpty) return child;
+    return Semantics(
+      button: true,
+      label: 'Open ${user.fullName}\'s profile',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => context.push('/u/${user.username}'),
+        child: child,
       ),
     );
   }

@@ -221,12 +221,14 @@ class ConversationAvatar extends StatelessWidget {
         ],
       );
     }
-    return UserAvatar(
+    final avatar = UserAvatar(
       name: conversation.displayName,
       url: conversation.otherUser?.avatarUrl ?? conversation.avatarUrl,
       size: size,
       online: online,
     );
+    // In a 1:1 chat the photo opens the person's profile; the rest of the row opens the chat.
+    return conversation.otherUser == null ? avatar : ProfileTap(user: conversation.otherUser, child: avatar);
   }
 }
 

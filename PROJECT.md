@@ -46,7 +46,8 @@
 | Community roles and permissions (custom roles, ranks, 10 permissions) | **Done and live** (section 4, item 15) |
 | Private profiles and anonymous posting | **Done and live** (section 4, item 16) |
 | Stickers, liked videos, playlists, background calls, staff long-press actions, welcome story, Terms/Privacy/Guidelines | **Done** (section 4, items 17–22) |
-| Automated checks | 137 database checks pass; two-browser LiveKit call tests; headless-browser screenshots of every main screen |
+| Edit college, adjust photos, music on photo posts, tap any profile picture | **Done** (section 4, items 23–26) |
+| Automated checks | 140 database checks pass; two-browser LiveKit call tests; headless-browser screenshots of every main screen |
 | Voice/video calls | **On LiveKit Cloud**; 1:1 and room calls tested between two browsers; not yet tried between two phones |
 | Android APK | **Built and installed** on a Realme phone over USB (section 2D) |
 | iOS build | **Not built**: needs a Mac with Xcode |
@@ -464,6 +465,27 @@ The first screen is a six-slide story above "Create account" and "I already have
 - Sign-up has a required checkbox: "I'm 13 or older and agree to the Terms of Service, Privacy Policy and Community Guidelines". The version agreed to (`terms_version`) and the time are saved on the account (Supabase user metadata).
 - The texts describe how this app actually works (anonymity, private profiles, LiveKit calls, roles and moderation, events, rankings). **They are a starting point, not legal advice:** have them reviewed before a public launch, add a real contact email, and bump `legalVersion` in `legal_screen.dart` when they change.
 
+### 23. Changing your college (added after the first build)
+
+**Profile → Edit profile → College → Change** opens the same college search as onboarding (with "Can't find it? Add your college"). Tap a college to pick it, tap it again to remove it, then Save.
+
+### 24. Adjusting photos (added after the first build)
+
+- **Profile photos** (Edit profile and onboarding): after choosing a photo, a round frame lets you pinch to zoom, drag to move and rotate. Saved as a 720×720 JPEG.
+- **Post photos**: a single photo (or one from the camera) opens the editor straight away; with several, each thumbnail has an **Adjust** badge. Shapes: Original, 1:1, 4:5 and 16:9, plus rotate. Saved as a JPEG up to 2048 px, never larger than the original's detail. Cancel keeps the photo as it was.
+- Built in the app (no extra native plugin): the visible frame is rendered at the photo's own resolution and encoded as JPEG.
+
+### 25. Music on photo posts (added after the first build)
+
+- In a photo post, tap **Add music** (or the ♪ button) and choose a song from your phone (MP3, M4A, AAC, WAV or OGG, up to 15 MB). Name it, pick a **15 s or 30 s** clip and slide to choose where it starts, with a preview button.
+- In feeds the photo shows a **♪ song name** badge: tap it to play or pause. On the post page it plays automatically. Only one post's music plays at a time, it loops the clip, and it stops when you leave the post.
+- Videos and reels keep their own sound; music is for photo posts. The app reminds people to only use music they have the rights to. (A built-in song library would need a licensed music service.)
+- Stored as an `audio` item in the post's media with `title`, `start_ms` and `duration_ms`; at most one song per post (database check).
+
+### 26. Tap a profile picture to open the profile (added after the first build)
+
+Profile pictures and names open that person's profile everywhere: posts, comments, reels, chat bubbles and sender names, the chat header (DMs), chat list photos (DMs), chat details, notifications, message search, members lists and the report queue. Anonymous people can't be opened.
+
 ---
 
 ## 5. What is NOT done yet
@@ -486,7 +508,7 @@ In priority order:
    - Group chat photo and rename (backend allows it; no UI yet).
 9. **Platform admin screen** for reviewing reports outside communities (profile posts, DMs, users).
 10. **College email verification** to grant the verified badge automatically.
-11. **Automated app tests.** The database has 137 tests; the Flutter app has no unit or widget tests yet (the template test was removed because it tested the counter demo).
+11. **Automated app tests.** The database has 140 tests; the Flutter app has no unit or widget tests yet (the template test was removed because it tested the counter demo).
 12. **Theme choice is not remembered** between app launches (it resets to "Match my phone").
 13. **App name, logo and icons.** "Quad" is a placeholder name. The launcher icon and web favicon are still Flutter's defaults.
 
@@ -601,7 +623,7 @@ Line counts are approximate.
 | `core/data/refs.dart` | 123 | Small shared models: `UserRef` (a person inside a post or chat; `isAnonymous` when it's an alias), `CommunityRef`, `CollegeRef`, `MediaItem` (image/video). |
 | `core/data/supabase_providers.dart` | 16 | Providers for the Supabase client, the auth-state stream and the current user id. |
 | `core/data/paged.dart` | 61 | `Paged<T>` and `PagedNotifier<T>`: the base for every infinite list (load first page, load more, refresh, drop duplicates). |
-| `core/data/media.dart` | 114 | `MediaPicker` (photos, camera, video, any file; works on web too) and `StorageRepository` (uploads to `avatars`, `media`, `chat`; cached signed URLs for chat files). |
+| `core/data/media.dart` | 150 | `MediaPicker` (photos, camera, video, songs, any file; works on web too), `measureImage` (works on the web too) and `StorageRepository` (uploads to `avatars`, `media`, `chat`; cached signed URLs for chat files). |
 | `core/data/realtime.dart` | 154 | `InboxRealtime`: one private channel per student carrying chat-list changes, new notifications and calls. `OnlineUsers`: app-wide presence for green online dots (`setVisible(false)` keeps private profiles hidden). |
 
 ### 9.4 core/router
@@ -638,6 +660,7 @@ Routes: `/splash /welcome /sign-in /sign-up /forgot-password /onboarding`, tabs 
 | `app_button.dart` | 115 | `AppButton`: primary/accent/secondary/outline/ghost/danger × small/medium/large, loading spinner, icons. `LinkButton`. |
 | `app_text_field.dart` | 174 | `AppTextField` (label above the field, password show/hide, counter) and `SearchField` (rounded search box). |
 | `avatars.dart` | 216 | `UserAvatar` (photo or coloured initials, online dot), `AnonymousAvatar` (detective hat, colour from the alias), `AuthorAvatar` (picks one of the two), `CommunityAvatar` (rounded square), `AvatarStack` (overlapping "who's going"). |
+| `photo_adjust.dart` | 350 | `adjustPhoto` / `PhotoAdjustScreen`: crop, zoom, move and rotate a photo in a round (profile) or Original/1:1/4:5/16:9 frame, then render it at the photo's resolution and encode a JPEG. |
 | `app_image.dart` | 48 | Cached network image with a neutral placeholder and fade-in. |
 | `skeleton.dart` | 135 | Pulsing loading placeholders shaped like posts and list rows. |
 | `states.dart` | 89 | `EmptyState` (icon, title, message, action), `ErrorState` (friendly error + Try again), `CenteredLoader`. Re-exports skeletons. |
@@ -661,7 +684,7 @@ Routes: `/splash /welcome /sign-in /sign-up /forgot-password /onboarding`, tabs 
 
 | File | Lines | What it contains |
 |---|---|---|
-| `onboarding/onboarding_screen.dart` | 565 | Five steps with a progress bar: 1) name + username (live availability check), 2) college search/pick or "add your college", 3) department + year, 4) interests (min 3) + skills, 5) photo + bio. Saves the profile and marks onboarding done. |
+| `onboarding/onboarding_screen.dart` | 409 | Five steps with a progress bar: 1) name + username (live availability check), 2) college (`CollegePicker`), 3) department + year, 4) interests (min 3) + skills, 5) photo (with the round adjust frame) + bio. Saves the profile and marks onboarding done. |
 
 ### 9.10 features/shell
 
@@ -686,7 +709,8 @@ Routes: `/splash /welcome /sign-in /sign-up /forgot-password /onboarding`, tabs 
 | `posts/ui/post_detail_screen.dart` | 60 | The post page: the full post card (videos play automatically) with its comments underneath (`CommentsPane`). |
 | `posts/ui/comments.dart` | 623 | Comments, shared by the post page and reels. `CommentsPane`: threaded comments (thread lines, Top/Newest sort), comment likes, reply, edit, delete, moderator remove, report, and a comment box with "Replying to…". Tap your avatar in the comment box to comment anonymously (always on for private profiles); anonymous commenters show an alias and a detective-hat avatar. Shows "Comments are turned off" when locked. `showCommentsSheet`: the same thing in a draggable sheet with a pinned title, used on reels. |
 | `posts/ui/post_video.dart` | 159 | `PostVideo`: a video inside a post. In feeds it loads only when tapped (so scrolling stays light), crops tall videos to 4:5, has a mute button, and pauses when another screen covers it. |
-| `posts/ui/composer_screen.dart` | 590 | New post: choose where (your profile or a community), type (post, photo, question, poll, achievement, announcement for people with that permission, video), title/body, up to 4 photos or 1 video, 2–6 poll options + length, up to 3 topics, and a **Post anonymously** switch for community posts. |
+| `posts/ui/post_music.dart` | 403 | Music on photo posts: `postMusicProvider` (one shared player, clip looping), `PostMusicBadge` (♪ name, tap to play/pause, autoplay on the post page), `pickPostMusic` and the clip sheet (name, 15/30 s, start slider, preview). |
+| `posts/ui/composer_screen.dart` | 710 | New post: choose where (your profile or a community), type (post, photo, question, poll, achievement, announcement for people with that permission, video), title/body, up to 4 photos (each adjustable) or 1 video, music for photo posts, 2–6 poll options + length, up to 3 topics, and a **Post anonymously** switch for community posts. |
 | `posts/ui/saved_screen.dart` | 43 | Your saved posts. |
 
 ### 9.13 features/communities
@@ -759,7 +783,7 @@ Routes: `/splash /welcome /sign-in /sign-up /forgot-password /onboarding`, tabs 
 | `profile/data/profile_repository.dart` | 104 | Profile by id/username, update, username availability, follow/unfollow, followers/following, suggestions, achievements, last seen, block/unblock/list blocked. |
 | `profile/providers.dart` | 79 | `myProfileProvider` (your profile; drives routing), profile by username, achievements, suggestions, followers/following, blocked, instant follow toggles, the 1-minute "last seen" heartbeat. |
 | `profile/ui/profile_screen.dart` | 657 | Profile page (yours or someone else's): avatar, counts, name + verified (+ lock if private), college line, bio, Edit/Share or Follow/Message; tabs Posts, Reels (grid), About (skills, interests, achievements with add/delete, events, joined date); block/report menu. Private profiles you can't see show "This profile is private" instead of the tabs. |
-| `profile/ui/edit_profile_screen.dart` | 152 | Edit photo, name, username (checks availability), bio, department, year, skills, interests. |
+| `profile/ui/edit_profile_screen.dart` | 204 | Edit photo (round adjust frame), name, username (checks availability), bio, **college** (picker sheet), department, year, skills, interests. |
 | `profile/ui/follow_list_screen.dart` | 72 | Followers/Following lists and the reusable `FollowButton`. |
 
 ### 9.19 features/colleges
@@ -771,6 +795,7 @@ Routes: `/splash /welcome /sign-in /sign-up /forgot-password /onboarding`, tabs 
 | `colleges/providers.dart` | 28 | Leaderboard (paged, by state), college, pillars, college search. |
 | `colleges/ui/colleges_view.dart` | 130 | Leaderboard list with "how it works" banner and state filter; `CollegeRow`. |
 | `colleges/ui/colleges_screen.dart` | 17 | Stand-alone leaderboard page (`/colleges`). |
+| `colleges/ui/college_picker.dart` | 239 | `CollegePicker` (search, pick, add a missing college; shared by onboarding and Edit profile), `AddCollegeSheet` and `pickCollege` (the picker in a sheet). |
 | `colleges/ui/college_detail_screen.dart` | 150 | College page: rank card, score out of 100, breakdown bars per pillar, stats tags, its communities, upcoming events. |
 | `colleges/ui/ranking_method_screen.dart` | 83 | "How rankings work": each pillar's weight and description (read live from the database) and the formula. |
 
@@ -840,8 +865,9 @@ Each migration is applied once, in order, and recorded in `supabase_migrations.s
 | `migrations/20261004000300_create_post_anonymous.sql` | `create_post` gains `p_is_anonymous`. |
 | `migrations/20261004000400_livekit_calls.sql` | `public.call_token(p_call, p_room)`: checks you may join, then builds and signs a LiveKit JWT inside Postgres (`pgcrypto` HMAC-SHA256) with the secret from Supabase Vault. Helpers `private.base64url`, `private.livekit_secret`, `private.livekit_jwt` (the last two can't be called by students). |
 | `migrations/20261004000500_stickers_playlists.sql` | Sticker messages (new `sticker` kind with an id check, "Sticker" chat preview, anonymous in rooms), `liked_videos()`, tables `playlists` and `playlist_items` (private to the owner, videos only, size limits), `my_playlists(p_post)` and `playlist_videos()`. |
+| `migrations/20261004000600_post_music.sql` | Lets the media bucket accept audio files, and allows at most one song per post (`private.media_count`). |
 | `seed.sql` | 50 Indian colleges (IITs, NITs, IIITs, BITS, VIT, SRM, Anna University, DU, JNU…) with city, state, type and founding year. Safe to re-run. |
-| `setup.sql` | All 16 migrations plus the seed in one file, for pasting into the Supabase SQL editor on a brand-new project. (Calls also need `npm run livekit:setup`.) |
+| `setup.sql` | All 17 migrations plus the seed in one file, for pasting into the Supabase SQL editor on a brand-new project. (Calls also need `npm run livekit:setup`.) |
 
 ---
 
@@ -998,8 +1024,8 @@ The goal was an app that looks designed, not generated: strong type, one confide
 
 | Check | Result |
 |---|---|
-| `npm run db:check`: all migrations in an in-memory Postgres + 137 behaviour checks | **137 passed, 0 failed** |
-| Migrations applied to your Supabase project | 16/16 applied |
+| `npm run db:check`: all migrations in an in-memory Postgres + 140 behaviour checks | **140 passed, 0 failed** |
+| Migrations applied to your Supabase project | 17/17 applied |
 | Demo login and key functions against your real project (Node script) | Login OK; feed, chat list and rankings return data. Roles: member lists with roles, role counts, create/update/delete role and the duplicate-name error all work through the real API |
 | Roles and anonymity screens in headless Chrome (as Aarav) | Manage tabs, Roles tab, role actions, members with Owner chip, member role picker, room hint, composer with all communities and the anonymous switch, Settings privacy switch; no console errors |
 | LiveKit calls (two headless Chrome windows with fake camera/mic, as Aarav and Diya) | Room voice and room video: both connected, LiveKit Cloud listed both with 1 and 2 tracks. 1:1 call: Diya's app rang on its own, Accept connected both, hanging up marked the call ended and closed Diya's screen. A token minted by the database was also accepted by LiveKit's own JS SDK. |

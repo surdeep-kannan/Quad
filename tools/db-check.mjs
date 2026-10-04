@@ -796,6 +796,22 @@ async function runScenarios(db) {
     check('nobody else can read your playlist', items.length === 0);
   });
 
+  // Music on photo posts ---------------------------------------------------
+  const mediaBucket = await one(db, `select allowed_mime_types from storage.buckets where id = 'media'`);
+  check('the media bucket accepts songs', mediaBucket.allowed_mime_types.includes('audio/mpeg'));
+  await db.query(`update public.posts set created_at = created_at - interval '1 hour' where author_id = $1`, [aarav]);
+  await as(db, aarav, async () => {
+    const photo = { url: 'https://example.com/p.jpg', type: 'image' };
+    const song = { url: 'https://example.com/s.mp3', type: 'audio', title: 'Campus anthem', start_ms: 15000, duration_ms: 30000 };
+    const withSong = (await one(db, `select public.create_post('image', $1, null, 'with a song', $2::jsonb) as id`,
+      [communityId, JSON.stringify([photo, song])])).id;
+    const stored = await one(db, `select media from public.post_details where id = $1`, [withSong]);
+    check('photo posts keep their song and clip', stored.media[1]?.title === 'Campus anthem' && stored.media[1]?.start_ms === 15000);
+    check('a post can have only one song', Boolean(await fails(db,
+      `select public.create_post('image', $1, null, 'two songs', $2::jsonb)`,
+      [communityId, JSON.stringify([photo, song, song])])));
+  });
+
   // Reports on anonymous posts don't reveal the author to community moderators.
   await as(db, diya, async () => {
     await db.query(`select public.submit_report('post', $1, 'spam', 'anon report')`, [anonPost]);
