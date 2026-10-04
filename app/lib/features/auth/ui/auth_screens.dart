@@ -96,6 +96,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
   final _password = TextEditingController();
   bool _busy = false;
   String? _error;
+  bool _unconfirmed = false;
 
   @override
   void dispose() {
@@ -109,13 +110,28 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
     setState(() {
       _busy = true;
       _error = null;
+      _unconfirmed = false;
     });
     try {
       await ref.read(authRepositoryProvider).signIn(email: _email.text, password: _password.text);
     } catch (error) {
-      if (mounted) setState(() => _error = friendlyError(error));
+      if (mounted) {
+        setState(() {
+          _unconfirmed = isEmailNotConfirmed(error);
+          _error = _unconfirmed ? 'Your email isn\'t confirmed yet. Open the link we emailed you, then sign in again.' : friendlyError(error);
+        });
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _resend() async {
+    try {
+      await ref.read(authRepositoryProvider).resendConfirmation(_email.text);
+      if (mounted) showToast(context, 'Confirmation email sent again. Check spam too.');
+    } catch (error) {
+      if (mounted) showToast(context, friendlyError(error), error: true);
     }
   }
 
@@ -157,6 +173,11 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
           child: LinkButton(label: 'Forgot password?', onPressed: () => context.push('/forgot-password')),
         ),
         if (_error != null) _ErrorNote(_error!),
+        if (_unconfirmed)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: LinkButton(label: 'Resend confirmation email', onPressed: _resend),
+          ),
         const SizedBox(height: Space.lg),
         AppButton(label: 'Sign in', expand: true, loading: _busy, onPressed: _submit),
         const SizedBox(height: Space.lg),
@@ -187,6 +208,7 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
   bool _busy = false;
   String? _error;
   String? _confirmEmailFor;
+  String _confirmPassword = '';
 
   @override
   void dispose() {
@@ -206,7 +228,12 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
       final ready = await ref
           .read(authRepositoryProvider)
           .signUp(name: _name.text, email: _email.text, password: _password.text);
-      if (!ready && mounted) setState(() => _confirmEmailFor = _email.text.trim());
+      if (!ready && mounted) {
+        setState(() {
+          _confirmEmailFor = _email.text.trim();
+          _confirmPassword = _password.text;
+        });
+      }
     } catch (error) {
       if (mounted) setState(() => _error = friendlyError(error));
     } finally {
@@ -216,7 +243,7 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_confirmEmailFor != null) return _CheckInbox(email: _confirmEmailFor!);
+    if (_confirmEmailFor != null) return _CheckInbox(email: _confirmEmailFor!, password: _confirmPassword);
     return _AuthScaffold(
       title: 'Create your account',
       subtitle: 'It takes a minute. You\'ll set up your profile next.',
@@ -274,13 +301,42 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
   }
 }
 
-class _CheckInbox extends ConsumerWidget {
-  const _CheckInbox({required this.email});
+/// Shown when the project requires email confirmation. Once the link is
+/// opened (on any device), "I've confirmed" signs straight in.
+class _CheckInbox extends ConsumerStatefulWidget {
+  const _CheckInbox({required this.email, required this.password});
 
   final String email;
+  final String password;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_CheckInbox> createState() => _CheckInboxState();
+}
+
+class _CheckInboxState extends ConsumerState<_CheckInbox> {
+  bool _busy = false;
+
+  String get email => widget.email;
+
+  Future<void> _continue() async {
+    setState(() => _busy = true);
+    try {
+      await ref.read(authRepositoryProvider).signIn(email: email, password: widget.password);
+    } catch (error) {
+      if (mounted) {
+        showToast(
+          context,
+          isEmailNotConfirmed(error) ? 'Not confirmed yet. Tap the link in the email first.' : friendlyError(error),
+          error: true,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final c = context.colors;
     return Scaffold(
       body: SafeArea(
@@ -305,13 +361,18 @@ class _CheckInbox extends ConsumerWidget {
                   text: 'We sent a confirmation link to ',
                   children: [
                     TextSpan(text: email, style: TextStyle(color: c.ink, fontWeight: FontWeight.w600)),
-                    const TextSpan(text: '. Open it, then come back and sign in.'),
+                    const TextSpan(
+                      text: '. Tap the link in it. If your browser shows an error page afterwards, that\'s fine: '
+                          'your email is still confirmed. Then come back here.',
+                    ),
                   ],
                 ),
                 style: context.text.bodyLarge!.copyWith(color: c.inkMuted),
               ),
+              const SizedBox(height: Space.md),
+              Text('Can\'t find it? Check spam or promotions.', style: context.text.bodySmall),
               const Spacer(flex: 2),
-              AppButton(label: 'Go to sign in', expand: true, onPressed: () => context.go('/sign-in')),
+              AppButton(label: 'I\'ve confirmed, continue', expand: true, loading: _busy, onPressed: _continue),
               const SizedBox(height: Space.sm),
               AppButton(
                 label: 'Resend email',

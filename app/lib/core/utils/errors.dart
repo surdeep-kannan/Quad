@@ -1,5 +1,10 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+/// True when sign-in failed only because the email isn't confirmed yet.
+bool isEmailNotConfirmed(Object error) =>
+    error is AuthException &&
+    (error.code == 'email_not_confirmed' || error.message.toLowerCase().contains('email not confirmed'));
+
 /// Turns backend and network errors into something a student can act on.
 String friendlyError(Object error) {
   if (error is AuthException) {
@@ -8,6 +13,9 @@ String friendlyError(Object error) {
     if (message.contains('email not confirmed')) return 'Confirm your email first. Check your inbox for the link.';
     if (message.contains('already registered') || message.contains('already been registered')) {
       return 'An account with this email already exists. Try signing in.';
+    }
+    if (error.code == 'over_email_send_rate_limit' || message.contains('email rate limit')) {
+      return 'Too many emails were sent to this address recently. Wait a while, then try again.';
     }
     if (message.contains('rate limit')) return 'Too many attempts. Wait a minute and try again.';
     if (message.contains('password')) return error.message;
@@ -22,7 +30,7 @@ String friendlyError(Object error) {
       }
       return error.message;
     }
-    if (code == '23505') return 'That already exists.';
+    if (code == '23505') return error.message.contains('duplicate key') ? 'That already exists.' : error.message;
     if (code == 'PGRST301' || code == '401') return 'Your session expired. Sign in again.';
     return 'Something went wrong. Please try again.';
   }
