@@ -117,8 +117,9 @@ Studio, run `android\gradlew --stop`, and build again.
 
 ### E. Email confirmation (why sign-up "didn't work")
 
-Your Supabase project has **Confirm email** turned on (checked through the
-public `/auth/v1/settings` endpoint: `mailer_autoconfirm = false`). So:
+Your Supabase project has **Confirm email** turned on (the Supabase default;
+the public `/auth/v1/settings` endpoint shows `mailer_autoconfirm = false`
+while it's on, and `true` once it's off). While it's on:
 
 1. After signing up, no session is created until the email link is clicked.
 2. The link in the email redirects to the project's Site URL (by default
@@ -216,7 +217,8 @@ Legend: ✅ done · 🟡 partly done or untested · ❌ not done
 |---|---|
 | Vertical full-screen reels, swipe to the next one | ✅ |
 | Upload (video up to 50 MB / 90 s, optional cover, topic, community) | ✅ |
-| Like (and double-tap like), comment, share, save | ✅ |
+| Like (and double-tap like), comment, share, save | ✅ comments open in a sheet over the reel, which keeps playing above it |
+| Videos and reels shown inside posts (feed and post page) | ✅ tap to play in feeds; plays automatically on the post page |
 | Views counted | ✅ |
 | Server-side processing (compression, HLS, thumbnails) | ❌ (see section 5) |
 
@@ -624,8 +626,10 @@ Routes: `/splash /welcome /sign-in /sign-up /forgot-password /onboarding`, tabs 
 | `posts/data/post.dart` | 371 | Models: `PostType` (9 types), `Reaction` (like, fire, haha, idea, clap), `Post`, `PollOption`, `EventSummary`, `PostAuthor`, `Comment` (posts and comments carry `isAnonymous` and `isMine`). |
 | `posts/data/post_repository.dart` | 177 | Feeds (home, community, reels, by author, saved), create post (one call, including poll options), edit, delete, react, save, follow, vote, record view and share, comments (list, add, edit, delete, like). `FeedMode` enum. |
 | `posts/providers.dart` | 318 | `PostPatch` + `PostActions`: instant likes, saves, follows, votes and deletes that stay in sync across every list and roll back on error. Providers for home feeds, community feeds, user posts, saved posts, reels feed, single post and comments. |
-| `posts/ui/post_card.dart` | 916 | The post card (header, type badge, title, rich body, photo grid with full-screen viewer, poll with animated results, event attachment, tags), action bar (reaction long-press picker, comments, share, save), share sheet (send to a chat, copy link, share outside), the "…" menu (follow discussion, save, copy link, pin/lock/remove for moderators, delete, report), `PersonRow`. |
-| `posts/ui/post_detail_screen.dart` | 573 | A post with its threaded comments (thread lines, Top/Newest sort), comment likes, reply, edit, delete, moderator remove, report, and a composer with "Replying to…". Tap your avatar in the comment box to comment anonymously (always on for private profiles). Anonymous commenters show an alias and a detective-hat avatar. Shows "Comments are turned off" when locked. |
+| `posts/ui/post_card.dart` | 1025 | The post card (header, type badge, title, rich body, photo grid with full-screen viewer, inline video, poll with animated results, event attachment, tags), action bar (reaction long-press picker, comments, share, save), share sheet (send to a chat, copy link, share outside), the "…" menu (follow discussion, save, copy link, pin/lock/remove for moderators, delete, report), `PersonRow`. |
+| `posts/ui/post_detail_screen.dart` | 60 | The post page: the full post card (videos play automatically) with its comments underneath (`CommentsPane`). |
+| `posts/ui/comments.dart` | 623 | Comments, shared by the post page and reels. `CommentsPane`: threaded comments (thread lines, Top/Newest sort), comment likes, reply, edit, delete, moderator remove, report, and a comment box with "Replying to…". Tap your avatar in the comment box to comment anonymously (always on for private profiles); anonymous commenters show an alias and a detective-hat avatar. Shows "Comments are turned off" when locked. `showCommentsSheet`: the same thing in a draggable sheet with a pinned title, used on reels. |
+| `posts/ui/post_video.dart` | 159 | `PostVideo`: a video inside a post. In feeds it loads only when tapped (so scrolling stays light), crops tall videos to 4:5, has a mute button, and pauses when another screen covers it. |
 | `posts/ui/composer_screen.dart` | 590 | New post: choose where (your profile or a community), type (post, photo, question, poll, achievement, announcement for people with that permission, video), title/body, up to 4 photos or 1 video, 2–6 poll options + length, up to 3 topics, and a **Post anonymously** switch for community posts. |
 | `posts/ui/saved_screen.dart` | 43 | Your saved posts. |
 
@@ -662,7 +666,7 @@ Routes: `/splash /welcome /sign-in /sign-up /forgot-password /onboarding`, tabs 
 
 | File | Lines | What it contains |
 |---|---|---|
-| `reels/ui/reels_screen.dart` | 286 | Full-screen vertical video pager: autoplay/pause on tap, double-tap like with a heart burst, right-side buttons (like, comments, share, save, sound, more), author/community/caption/views. |
+| `reels/ui/reels_screen.dart` | 356 | Full-screen vertical video pager: autoplay/pause on tap, double-tap like with a heart burst, right-side buttons (like, comments in a sheet over the video, share, save, sound, more), author/community/caption/views. |
 | `reels/ui/create_reel_screen.dart` | 170 | Upload a reel: pick a video (≤50 MB, ≤90 s), optional cover, caption, topic, optional community. |
 
 ### 9.16 features/chat
@@ -980,7 +984,7 @@ Adding a database change: create `supabase/migrations/<timestamp>_<name>.sql` (e
 
 **This week**
 
-1. Turn off **Confirm email** in the Supabase dashboard while testing (section 2E), or set up custom SMTP.
+1. Turn off **Confirm email** while testing (section 2E); before launch turn it back on and set up custom SMTP.
 2. Rotate the Supabase secret key and DB password (section 6).
 3. Try roles with two accounts: as an owner create a role with only "Manage rooms", give it to someone, and check they can edit rooms but not ban people.
 4. Turn on Private profile on one account and check that its comments and room messages show up anonymously for another account.

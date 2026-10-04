@@ -29,6 +29,7 @@ import '../../moderation/ui/report_sheet.dart';
 import '../../profile/data/profile.dart';
 import '../data/post.dart';
 import '../providers.dart';
+import 'post_video.dart';
 
 /// A post in a feed. Tapping opens the discussion.
 class PostCard extends ConsumerWidget {
@@ -54,31 +55,36 @@ class PostCard extends ConsumerWidget {
         if (live.isRemoved) _RemovedNote(reason: live.removedReason),
         if (_typeLabel(live.type) != null) ...[
           const SizedBox(height: 10),
-          Align(alignment: Alignment.centerLeft, child: _TypeBadge(type: live.type)),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: _TypeBadge(type: live.type),
+          ),
         ],
         if (live.title != null) ...[
           const SizedBox(height: 8),
           Text(
             live.title!,
-            style: context.text.titleMedium!.copyWith(fontSize: inDetail ? 19 : 17, height: 1.3, fontWeight: FontWeight.w700),
+            style: context.text.titleMedium!.copyWith(
+              fontSize: inDetail ? 19 : 17,
+              height: 1.3,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ],
         if (live.body != null) ...[
           SizedBox(height: live.title != null ? 6 : 8),
           RichBody(live.body!, maxLines: inDetail ? null : 6, style: context.text.bodyMedium),
         ],
-        if (live.images.isNotEmpty) ...[
+        if (live.images.isNotEmpty) ...[const SizedBox(height: 12), MediaGrid(media: live.images)],
+        if (live.video != null) ...[
           const SizedBox(height: 12),
-          MediaGrid(media: live.images),
+          PostVideo(media: live.video!, autoplay: inDetail, fullHeight: inDetail),
         ],
         if (live.type == PostType.poll && live.pollOptions.isNotEmpty) ...[
           const SizedBox(height: 12),
           PollView(post: live),
         ],
-        if (live.event != null) ...[
-          const SizedBox(height: 12),
-          _EventAttachment(event: live.event!),
-        ],
+        if (live.event != null) ...[const SizedBox(height: 12), _EventAttachment(event: live.event!)],
         if (live.tags.isNotEmpty) ...[
           const SizedBox(height: 10),
           Wrap(
@@ -98,12 +104,16 @@ class PostCard extends ConsumerWidget {
     );
 
     return Material(
-      color: live.type == PostType.announcement ? c.accentSoft.withValues(alpha: context.isDark ? 0.35 : 0.5) : c.surface,
+      color: live.type == PostType.announcement
+          ? c.accentSoft.withValues(alpha: context.isDark ? 0.35 : 0.5)
+          : c.surface,
       child: InkWell(
         onTap: inDetail ? null : () => context.push('/post/${live.id}'),
         child: Container(
           padding: const EdgeInsets.fromLTRB(Space.gutter, 14, Space.gutter, 4),
-          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: c.line))),
+          decoration: BoxDecoration(
+            border: Border(bottom: BorderSide(color: c.line)),
+          ),
           child: content,
         ),
       ),
@@ -112,9 +122,9 @@ class PostCard extends ConsumerWidget {
 }
 
 String? _typeLabel(PostType type) => switch (type) {
-      PostType.question || PostType.announcement || PostType.achievement || PostType.poll || PostType.event => type.label,
-      _ => null,
-    };
+  PostType.question || PostType.announcement || PostType.achievement || PostType.poll || PostType.event => type.label,
+  _ => null,
+};
 
 class _TypeBadge extends StatelessWidget {
   const _TypeBadge({required this.type});
@@ -273,64 +283,74 @@ class MediaGrid extends StatelessWidget {
     const gap = 3.0;
     final Widget grid = switch (media.length) {
       1 => tile(0, aspect: (media[0].aspectRatio ?? 4 / 3).clamp(0.8, 1.91)),
-      2 => Row(children: [Expanded(child: tile(0, aspect: 0.9)), const SizedBox(width: gap), Expanded(child: tile(1, aspect: 0.9))]),
+      2 => Row(
+        children: [
+          Expanded(child: tile(0, aspect: 0.9)),
+          const SizedBox(width: gap),
+          Expanded(child: tile(1, aspect: 0.9)),
+        ],
+      ),
       3 => AspectRatio(
-          aspectRatio: 1.25,
-          child: Row(
-            children: [
-              Expanded(flex: 3, child: SizedBox.expand(child: tile(0))),
-              const SizedBox(width: gap),
-              Expanded(
-                flex: 2,
-                child: Column(
-                  children: [
-                    Expanded(child: SizedBox.expand(child: tile(1))),
-                    const SizedBox(height: gap),
-                    Expanded(child: SizedBox.expand(child: tile(2))),
-                  ],
-                ),
+        aspectRatio: 1.25,
+        child: Row(
+          children: [
+            Expanded(flex: 3, child: SizedBox.expand(child: tile(0))),
+            const SizedBox(width: gap),
+            Expanded(
+              flex: 2,
+              child: Column(
+                children: [
+                  Expanded(child: SizedBox.expand(child: tile(1))),
+                  const SizedBox(height: gap),
+                  Expanded(child: SizedBox.expand(child: tile(2))),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
+      ),
       _ => AspectRatio(
-          aspectRatio: 1,
-          child: Column(
-            children: [
-              for (final row in [0, 2]) ...[
-                if (row == 2) const SizedBox(height: gap),
-                Expanded(
-                  child: Row(
-                    children: [
-                      Expanded(child: SizedBox.expand(child: tile(row))),
-                      const SizedBox(width: gap),
-                      Expanded(
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            tile(row + 1),
-                            if (row == 2 && media.length > 4)
-                              IgnorePointer(
-                                child: ColoredBox(
-                                  color: Colors.black45,
-                                  child: Center(
-                                    child: Text(
-                                      '+${media.length - 4}',
-                                      style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700),
+        aspectRatio: 1,
+        child: Column(
+          children: [
+            for (final row in [0, 2]) ...[
+              if (row == 2) const SizedBox(height: gap),
+              Expanded(
+                child: Row(
+                  children: [
+                    Expanded(child: SizedBox.expand(child: tile(row))),
+                    const SizedBox(width: gap),
+                    Expanded(
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          tile(row + 1),
+                          if (row == 2 && media.length > 4)
+                            IgnorePointer(
+                              child: ColoredBox(
+                                color: Colors.black45,
+                                child: Center(
+                                  child: Text(
+                                    '+${media.length - 4}',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.w700,
                                     ),
                                   ),
                                 ),
                               ),
-                          ],
-                        ),
+                            ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ],
-          ),
+          ],
         ),
+      ),
     };
     return ClipRRect(borderRadius: BorderRadius.circular(Radii.md), child: grid);
   }
@@ -368,7 +388,9 @@ class _PhotoViewerState extends State<_PhotoViewer> {
             onPageChanged: (i) => setState(() => _index = i),
             itemBuilder: (_, i) => InteractiveViewer(
               maxScale: 4,
-              child: Center(child: AppImage(widget.media[i].url, fit: BoxFit.contain, placeholderColor: Colors.black)),
+              child: Center(
+                child: AppImage(widget.media[i].url, fit: BoxFit.contain, placeholderColor: Colors.black),
+              ),
             ),
           ),
           SafeArea(
@@ -433,7 +455,10 @@ class PollView extends ConsumerWidget {
                 child: Container(
                   height: 44,
                   decoration: BoxDecoration(
-                    border: Border.all(color: option.id == post.myVote ? c.ink : c.line, width: option.id == post.myVote ? 1.5 : 1),
+                    border: Border.all(
+                      color: option.id == post.myVote ? c.ink : c.line,
+                      width: option.id == post.myVote ? 1.5 : 1,
+                    ),
                     borderRadius: BorderRadius.circular(Radii.md - 2),
                   ),
                   child: Stack(
@@ -483,7 +508,10 @@ class PollView extends ConsumerWidget {
         Text(
           [
             plural(total, 'vote'),
-            if (post.pollClosed) 'Final results' else if (post.pollEndsAt != null) 'Ends ${eventCountdown(post.pollEndsAt!, post.pollEndsAt).toLowerCase()}',
+            if (post.pollClosed)
+              'Final results'
+            else if (post.pollEndsAt != null)
+              'Ends ${eventCountdown(post.pollEndsAt!, post.pollEndsAt).toLowerCase()}',
           ].join(' · '),
           style: context.text.bodySmall,
         ),
@@ -532,7 +560,12 @@ class _EventAttachment extends StatelessWidget {
                     style: context.text.labelSmall!.copyWith(color: c.accentInk),
                   ),
                   const SizedBox(height: 4),
-                  Text(event.title, style: context.text.titleSmall!.copyWith(fontSize: 15), maxLines: 2, overflow: TextOverflow.ellipsis),
+                  Text(
+                    event.title,
+                    style: context.text.titleSmall!.copyWith(fontSize: 15),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   const SizedBox(height: 4),
                   Text(
                     [
@@ -577,7 +610,13 @@ class PostActionBar extends ConsumerWidget {
     final muted = dark ? Colors.white : c.inkMuted;
     final reacted = post.myReaction != null;
 
-    Widget action({required Widget icon, String? count, required String label, VoidCallback? onTap, VoidCallback? onLongPress}) {
+    Widget action({
+      required Widget icon,
+      String? count,
+      required String label,
+      VoidCallback? onTap,
+      VoidCallback? onLongPress,
+    }) {
       return Pressable(
         onTap: onTap,
         onLongPress: onLongPress,
@@ -591,7 +630,10 @@ class PostActionBar extends ConsumerWidget {
               icon,
               if (count != null) ...[
                 const SizedBox(width: 5),
-                Text(count, style: context.text.labelMedium!.copyWith(color: muted, fontWeight: FontWeight.w600)),
+                Text(
+                  count,
+                  style: context.text.labelMedium!.copyWith(color: muted, fontWeight: FontWeight.w600),
+                ),
               ],
             ],
           ),
@@ -643,13 +685,18 @@ class PostActionBar extends ConsumerWidget {
             child: Text(post.topReactions.map((r) => r.emoji).join(), style: const TextStyle(fontSize: 13)),
           ),
         action(
-          icon: Icon(post.isSaved ? AppIcons.bookmarkFill : AppIcons.bookmark, size: 22, color: post.isSaved ? (dark ? Colors.white : c.ink) : muted),
+          icon: Icon(
+            post.isSaved ? AppIcons.bookmarkFill : AppIcons.bookmark,
+            size: 22,
+            color: post.isSaved ? (dark ? Colors.white : c.ink) : muted,
+          ),
           label: post.isSaved ? 'Unsave' : 'Save',
           onTap: () async {
             HapticFeedback.selectionClick();
             try {
               await ref.read(postActionsProvider).toggleSave(post);
-              if (context.mounted && !post.isSaved) showToast(context, 'Saved. Find it in your profile.', icon: AppIcons.bookmarkFill);
+              if (context.mounted && !post.isSaved)
+                showToast(context, 'Saved. Find it in your profile.', icon: AppIcons.bookmarkFill);
             } catch (error) {
               if (context.mounted) showToast(context, friendlyError(error), error: true);
             }
@@ -719,10 +766,7 @@ String _postLink(Post post) => kIsWeb ? '${Uri.base.origin}/#/post/${post.id}' :
 
 /// Send a post to a chat, copy its link or share it outside the app.
 Future<void> showShareSheet(BuildContext context, WidgetRef ref, Post post) {
-  return showAppSheet<void>(
-    context,
-    builder: (sheetContext) => _ShareSheet(post: post),
-  );
+  return showAppSheet<void>(context, builder: (sheetContext) => _ShareSheet(post: post));
 }
 
 class _ShareSheet extends ConsumerWidget {
@@ -843,22 +887,22 @@ Future<void> showPostMenu(BuildContext context, WidgetRef ref, Post post, {bool 
     }
   }
 
-  Future<void> moderate(String action, {String? reason}) => run(() async {
-        await ref.read(moderationRepositoryProvider).moderate(
-              targetType: 'post',
-              targetId: post.id,
-              action: action,
-              reason: reason,
-            );
-        actions.moderated(post.id, action);
-      }, switch (action) {
-        'pin' => 'Pinned to the top',
-        'unpin' => 'Unpinned',
-        'lock' => 'Comments turned off',
-        'unlock' => 'Comments turned on',
-        'remove' => 'Post removed',
-        _ => 'Post restored',
-      });
+  Future<void> moderate(String action, {String? reason}) => run(
+    () async {
+      await ref
+          .read(moderationRepositoryProvider)
+          .moderate(targetType: 'post', targetId: post.id, action: action, reason: reason);
+      actions.moderated(post.id, action);
+    },
+    switch (action) {
+      'pin' => 'Pinned to the top',
+      'unpin' => 'Unpinned',
+      'lock' => 'Comments turned off',
+      'unlock' => 'Comments turned on',
+      'remove' => 'Post removed',
+      _ => 'Post restored',
+    },
+  );
 
   return showActionSheet(
     context,
@@ -874,7 +918,11 @@ Future<void> showPostMenu(BuildContext context, WidgetRef ref, Post post, {bool 
         label: post.isSaved ? 'Remove from saved' : 'Save',
         onTap: () => run(() => actions.toggleSave(post)),
       ),
-      SheetAction(icon: AppIcons.link, label: 'Copy link', onTap: () => Clipboard.setData(ClipboardData(text: _postLink(post)))),
+      SheetAction(
+        icon: AppIcons.link,
+        label: 'Copy link',
+        onTap: () => Clipboard.setData(ClipboardData(text: _postLink(post))),
+      ),
       if (isMod && post.community != null) ...[
         SheetAction(
           icon: AppIcons.pinOutline,
@@ -942,11 +990,11 @@ class PersonRow extends StatelessWidget {
   final bool online;
 
   factory PersonRow.profile(Profile profile, {Widget? trailing, VoidCallback? onTap}) => PersonRow(
-        user: profile.ref,
-        subtitle: profile.academicLine.isEmpty ? '@${profile.username}' : profile.academicLine,
-        trailing: trailing,
-        onTap: onTap,
-      );
+    user: profile.ref,
+    subtitle: profile.academicLine.isEmpty ? '@${profile.username}' : profile.academicLine,
+    trailing: trailing,
+    onTap: onTap,
+  );
 
   @override
   Widget build(BuildContext context) {

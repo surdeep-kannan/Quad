@@ -16,6 +16,7 @@ import '../../../core/widgets/states.dart';
 import '../../posts/data/post.dart';
 import '../../posts/data/post_repository.dart';
 import '../../posts/providers.dart';
+import '../../posts/ui/comments.dart';
 import '../../posts/ui/post_card.dart';
 
 /// Full-screen vertical short videos. Swipe up for the next one.
@@ -36,11 +37,16 @@ class _ReelsScreenState extends ConsumerState<ReelsScreen> {
     final notifier = ref.read(reelsFeedProvider.notifier);
     return Scaffold(
       backgroundColor: Colors.black,
+      // The comments sheet's keyboard shouldn't squash the video.
+      resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
           feed.when(
             loading: () => const Center(child: CircularProgressIndicator(color: Colors.white)),
-            error: (e, _) => Theme(data: ThemeData.dark(), child: ErrorState(error: e, onRetry: () => ref.invalidate(reelsFeedProvider))),
+            error: (e, _) => Theme(
+              data: ThemeData.dark(),
+              child: ErrorState(error: e, onRetry: () => ref.invalidate(reelsFeedProvider)),
+            ),
             data: (paged) {
               if (paged.items.isEmpty) {
                 return Center(
@@ -49,7 +55,10 @@ class _ReelsScreenState extends ConsumerState<ReelsScreen> {
                     children: [
                       const Icon(AppIcons.reels, color: Colors.white54, size: 48),
                       const SizedBox(height: 12),
-                      const Text('No reels yet', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700)),
+                      const Text(
+                        'No reels yet',
+                        style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700),
+                      ),
                       const SizedBox(height: 16),
                       FilledButton(
                         style: FilledButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.black),
@@ -85,7 +94,15 @@ class _ReelsScreenState extends ConsumerState<ReelsScreen> {
             right: 8,
             child: Row(
               children: [
-                const Text('Reels', style: TextStyle(color: Colors.white, fontSize: 24, fontFamily: AppFonts.display, fontWeight: FontWeight.w800)),
+                const Text(
+                  'Reels',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontFamily: AppFonts.display,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
                 const Spacer(),
                 IconButton(
                   tooltip: 'Upload a reel',
@@ -193,7 +210,11 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
             FittedBox(
               fit: BoxFit.cover,
               clipBehavior: Clip.hardEdge,
-              child: SizedBox(width: video.value.size.width, height: video.value.size.height, child: VideoPlayer(video)),
+              child: SizedBox(
+                width: video.value.size.width,
+                height: video.value.size.height,
+                child: VideoPlayer(video),
+              ),
             )
           else
             const Center(child: CircularProgressIndicator(color: Colors.white54, strokeWidth: 2)),
@@ -223,7 +244,10 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
                       AuthorAvatar(user: post.author, size: 34),
                       const SizedBox(width: 10),
                       Flexible(
-                        child: Text(post.author.fullName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15)),
+                        child: Text(
+                          post.author.fullName,
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15),
+                        ),
                       ),
                     ],
                   ),
@@ -232,15 +256,26 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
                   const SizedBox(height: 6),
                   GestureDetector(
                     onTap: () => context.push('/c/${post.community!.slug}'),
-                    child: Text('in ${post.community!.name}', style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                    child: Text(
+                      'in ${post.community!.name}',
+                      style: const TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
                   ),
                 ],
                 if (post.body != null) ...[
                   const SizedBox(height: 8),
-                  Text(post.body!, maxLines: 3, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.35)),
+                  Text(
+                    post.body!,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.35),
+                  ),
                 ],
                 const SizedBox(height: 6),
-                Text('${compactCount(post.viewsCount)} views · ${timeAgo(post.createdAt)}', style: const TextStyle(color: Colors.white60, fontSize: 12)),
+                Text(
+                  '${compactCount(post.viewsCount)} views · ${timeAgo(post.createdAt)}',
+                  style: const TextStyle(color: Colors.white60, fontSize: 12),
+                ),
               ],
             ),
           ),
@@ -255,7 +290,11 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
                   label: compactCount(post.likesCount),
                   onTap: _like,
                 ),
-                _RailButton(icon: AppIcons.comment, label: compactCount(post.commentsCount), onTap: () => context.push('/post/${post.id}')),
+                _RailButton(
+                  icon: AppIcons.comment,
+                  label: compactCount(post.commentsCount),
+                  onTap: () => showCommentsSheet(context, post),
+                ),
                 _RailButton(icon: AppIcons.share, label: 'Share', onTap: () => showShareSheet(context, ref, post)),
                 _RailButton(
                   icon: post.isSaved ? AppIcons.bookmarkFill : AppIcons.bookmark,
@@ -264,7 +303,11 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
                     if (context.mounted) showToast(context, friendlyError(e), error: true);
                   }),
                 ),
-                _RailButton(icon: widget.muted ? AppIcons.volumeOff : AppIcons.volumeOn, label: widget.muted ? 'Muted' : 'Sound', onTap: widget.onToggleMute),
+                _RailButton(
+                  icon: widget.muted ? AppIcons.volumeOff : AppIcons.volumeOn,
+                  label: widget.muted ? 'Muted' : 'Sound',
+                  onTap: widget.onToggleMute,
+                ),
                 _RailButton(icon: AppIcons.more, label: '', onTap: () => showPostMenu(context, ref, post)),
               ],
             ),
@@ -292,10 +335,18 @@ class _RailButton extends StatelessWidget {
         radius: 30,
         child: Column(
           children: [
-            Icon(icon, color: color, size: 30, shadows: const [Shadow(blurRadius: 8, color: Colors.black45)]),
+            Icon(
+              icon,
+              color: color,
+              size: 30,
+              shadows: const [Shadow(blurRadius: 8, color: Colors.black45)],
+            ),
             if (label.isNotEmpty) ...[
               const SizedBox(height: 3),
-              Text(label, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+              Text(
+                label,
+                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+              ),
             ],
           ],
         ),

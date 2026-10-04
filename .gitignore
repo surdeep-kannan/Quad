@@ -12,3 +12,6 @@ Thumbs.db
 
 # Original brief (contains credentials); SPEC.md is the clean copy
 lookme.md
+
+# LiveKit credentials
+livelykitenv.md
