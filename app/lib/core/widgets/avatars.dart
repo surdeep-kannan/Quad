@@ -1,8 +1,10 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../data/refs.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../utils/context_x.dart';
+import 'app_icons.dart';
 import 'app_image.dart';
 
 /// A student's photo, or their initials on a colour derived from their name.
@@ -85,6 +87,45 @@ class UserAvatar extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Stand-in for anonymous authors: a detective glyph on a colour derived from
+/// the alias, so different aliases look different but reveal nothing.
+class AnonymousAvatar extends StatelessWidget {
+  const AnonymousAvatar({super.key, required this.alias, this.size = 40});
+
+  final String alias;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Palette.forText(alias);
+    return Semantics(
+      label: 'Anonymous',
+      image: true,
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(color: color.withValues(alpha: 0.18), shape: BoxShape.circle),
+        alignment: Alignment.center,
+        child: Icon(AppIcons.anonymous, size: size * 0.52, color: color),
+      ),
+    );
+  }
+}
+
+/// A person's avatar, or the anonymous one when they posted anonymously.
+class AuthorAvatar extends StatelessWidget {
+  const AuthorAvatar({super.key, required this.user, this.size = 40, this.online = false});
+
+  final UserRef user;
+  final double size;
+  final bool online;
+
+  @override
+  Widget build(BuildContext context) => user.isAnonymous
+      ? AnonymousAvatar(alias: user.fullName, size: size)
+      : UserAvatar(name: user.fullName, url: user.avatarUrl, size: size, online: online);
 }
 
 /// Communities use rounded squares (like app icons) so they're never confused

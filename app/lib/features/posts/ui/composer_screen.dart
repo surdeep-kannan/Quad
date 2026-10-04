@@ -42,14 +42,24 @@ class _ComposerScreenState extends ConsumerState<ComposerScreen> {
   PickedFile? _video;
   final Set<String> _tags = {};
   Duration _pollDuration = const Duration(days: 3);
+  bool _anonymous = false;
   bool _posting = false;
 
   @override
   void initState() {
     super.initState();
-    if (widget.communityId != null) {
-      final mine = ref.read(myCommunitiesProvider).value ?? const [];
-      _community = mine.where((c) => c.id == widget.communityId).firstOrNull;
+    final communityId = widget.communityId;
+    if (communityId != null) {
+      final mine = ref.read(myCommunitiesProvider).value;
+      if (mine != null) {
+        _community = mine.where((c) => c.id == communityId).firstOrNull;
+      } else {
+        // Opened before the list loaded (e.g. from a link): pick it once it arrives.
+        ref.read(myCommunitiesProvider.future).then((list) {
+          if (mounted && _community == null)
+            setState(() => _community = list.where((c) => c.id == communityId).firstOrNull);
+        }, onError: (_) {});
+      }
     }
     _title.addListener(_refresh);
     _body.addListener(_refresh);
@@ -67,7 +77,15 @@ class _ComposerScreenState extends ConsumerState<ComposerScreen> {
     super.dispose();
   }
 
-  bool get _needsTitle => const {PostType.question, PostType.poll, PostType.announcement, PostType.achievement}.contains(_type);
+  /// Only community posts can be anonymous; announcements and events never are.
+  bool get _canBeAnonymous => _community != null && _type != PostType.announcement && _type != PostType.event;
+
+  bool get _isPrivate => ref.read(myProfileProvider).value?.isPrivate ?? false;
+
+  bool get _postsAnonymously => _canBeAnonymous && (_anonymous || _isPrivate);
+
+  bool get _needsTitle =>
+      const {PostType.question, PostType.poll, PostType.announcement, PostType.achievement}.contains(_type);
 
   bool get _valid {
     if (_needsTitle && _title.text.trim().isEmpty) return false;
@@ -100,7 +118,13 @@ class _ComposerScreenState extends ConsumerState<ComposerScreen> {
   }
 
   Future<void> _chooseDestination() async {
-    final communities = ref.read(myCommunitiesProvider).value ?? const [];
+    List<Community> communities;
+    try {
+      communities = ref.read(myCommunitiesProvider).value ?? await ref.read(myCommunitiesProvider.future);
+    } catch (_) {
+      communities = const [];
+    }
+    if (!mounted) return;
     final picked = await showAppSheet<Object>(
       context,
       builder: (sheetContext) => ListView(
@@ -119,9 +143,14 @@ class _ComposerScreenState extends ConsumerState<ComposerScreen> {
           ),
           for (final community in communities)
             ListTile(
-              leading: CommunityAvatar(name: community.name, color: community.color, url: community.avatarUrl, size: 36),
+              leading: CommunityAvatar(
+                name: community.name,
+                color: community.color,
+                url: community.avatarUrl,
+                size: 36,
+              ),
               title: Text(community.name),
-              subtitle: Text(community.isMod ? 'You moderate this community' : '${community.membersCount} members'),
+              subtitle: Text(community.isStaff ? 'You help run this community' : '${community.membersCount} members'),
               onTap: () => Navigator.of(sheetContext).pop(community),
             ),
         ],
@@ -130,7 +159,8 @@ class _ComposerScreenState extends ConsumerState<ComposerScreen> {
     if (picked == null) return;
     setState(() {
       _community = picked is Community ? picked : null;
-      if (_type == PostType.announcement && !(_community?.isMod ?? false)) _type = PostType.text;
+      if (_type == PostType.announcement && !(_community?.can(CommunityPermissions.postAnnouncements) ?? false))
+        _type = PostType.text;
     });
   }
 
@@ -148,7 +178,9 @@ class _ComposerScreenState extends ConsumerState<ComposerScreen> {
           media.add(MediaItem(url: url, type: 'image', width: image.width, height: image.height));
         }
       }
-      final id = await ref.read(postRepositoryProvider).create(
+      final id = await ref
+          .read(postRepositoryProvider)
+          .create(
             type: _type,
             communityId: _community?.id,
             title: _title.text.trim().isEmpty ? null : _title.text.trim(),
@@ -158,6 +190,7 @@ class _ComposerScreenState extends ConsumerState<ComposerScreen> {
             eventId: widget.eventId,
             pollOptions: _type == PostType.poll ? [for (final c in _options) c.text.trim()] : null,
             pollEndsAt: _type == PostType.poll ? DateTime.now().add(_pollDuration) : null,
+            anonymous: _postsAnonymously,
           );
       for (final mode in FeedMode.values) {
         ref.invalidate(homeFeedProvider(mode));
@@ -178,7 +211,7 @@ class _ComposerScreenState extends ConsumerState<ComposerScreen> {
   Widget build(BuildContext context) {
     final c = context.colors;
     final me = ref.watch(myProfileProvider).value;
-    final canAnnounce = _community?.isMod ?? false;
+    final canAnnounce = _community?.can(CommunityPermissions.postAnnouncements) ?? false;
     final types = [
       PostType.text,
       PostType.image,
@@ -211,7 +244,10 @@ class _ComposerScreenState extends ConsumerState<ComposerScreen> {
         children: [
           Row(
             children: [
-              if (me != null) UserAvatar(name: me.fullName, url: me.avatarUrl, size: 40),
+              if (me != null)
+                _postsAnonymously
+                    ? const AnonymousAvatar(alias: 'me', size: 40)
+                    : UserAvatar(name: me.fullName, url: me.avatarUrl, size: 40),
               const SizedBox(width: 10),
               Expanded(
                 child: Align(
@@ -228,7 +264,12 @@ class _ComposerScreenState extends ConsumerState<ComposerScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             if (_community != null) ...[
-                              CommunityAvatar(name: _community!.name, color: _community!.color, url: _community!.avatarUrl, size: 18),
+                              CommunityAvatar(
+                                name: _community!.name,
+                                color: _community!.color,
+                                url: _community!.avatarUrl,
+                                size: 18,
+                              ),
                               const SizedBox(width: 6),
                             ],
                             Flexible(
@@ -249,6 +290,21 @@ class _ComposerScreenState extends ConsumerState<ComposerScreen> {
               ),
             ],
           ),
+          if (_canBeAnonymous) ...[
+            const SizedBox(height: Space.md),
+            _AnonymousToggle(
+              value: _postsAnonymously,
+              locked: me?.isPrivate ?? false,
+              onChanged: (value) => setState(() => _anonymous = value),
+            ),
+          ] else if (_community == null && (me?.isPrivate ?? false)) ...[
+            const SizedBox(height: Space.md),
+            Text(
+              'Your profile is private, so posts here are only visible to people you follow. '
+              'Post in a community to share anonymously.',
+              style: context.text.bodySmall,
+            ),
+          ],
           const SizedBox(height: Space.lg),
           ChipRow(
             padding: EdgeInsets.zero,
@@ -332,7 +388,12 @@ class _ComposerScreenState extends ConsumerState<ComposerScreen> {
                   ('3 days', const Duration(days: 3)),
                   ('1 week', const Duration(days: 7)),
                 ])
-                  PillChip(label: label, dense: true, selected: _pollDuration == duration, onTap: () => setState(() => _pollDuration = duration)),
+                  PillChip(
+                    label: label,
+                    dense: true,
+                    selected: _pollDuration == duration,
+                    onTap: () => setState(() => _pollDuration = duration),
+                  ),
               ],
             ),
           ],
@@ -370,7 +431,12 @@ class _ComposerScreenState extends ConsumerState<ComposerScreen> {
           if (_type == PostType.video) ...[
             const SizedBox(height: Space.md),
             _video == null
-                ? AppButton(label: 'Choose a video', icon: AppIcons.video, variant: ButtonVariant.secondary, onPressed: _pickVideo)
+                ? AppButton(
+                    label: 'Choose a video',
+                    icon: AppIcons.video,
+                    variant: ButtonVariant.secondary,
+                    onPressed: _pickVideo,
+                  )
                 : ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: const Icon(AppIcons.video),
@@ -409,7 +475,9 @@ class _ComposerScreenState extends ConsumerState<ComposerScreen> {
           ? null
           : SafeArea(
               child: Container(
-                decoration: BoxDecoration(border: Border(top: BorderSide(color: c.line))),
+                decoration: BoxDecoration(
+                  border: Border(top: BorderSide(color: c.line)),
+                ),
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 child: Row(
                   children: [
@@ -435,6 +503,58 @@ class _ComposerScreenState extends ConsumerState<ComposerScreen> {
                 ),
               ),
             ),
+    );
+  }
+}
+
+class _AnonymousToggle extends StatelessWidget {
+  const _AnonymousToggle({required this.value, required this.locked, required this.onChanged});
+
+  final bool value;
+
+  /// Private profiles always post anonymously.
+  final bool locked;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Material(
+      color: value ? c.accentSoft : c.surfaceMuted,
+      borderRadius: BorderRadius.circular(Radii.md),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(Radii.md),
+        onTap: locked ? null : () => onChanged(!value),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 6, 10),
+          child: Row(
+            children: [
+              Icon(
+                value ? AppIcons.anonymous : AppIcons.anonymousOutline,
+                size: 22,
+                color: value ? c.accentInk : c.inkMuted,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Post anonymously', style: context.text.titleSmall),
+                    const SizedBox(height: 2),
+                    Text(
+                      locked
+                          ? 'Always on because your profile is private.'
+                          : 'Shows a random name like anonymous_quiet_otter_421 instead of yours.',
+                      style: context.text.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+              Switch(value: value, onChanged: locked ? null : onChanged),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

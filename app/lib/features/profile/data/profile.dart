@@ -24,6 +24,8 @@ class Profile {
     this.isFollowing = false,
     this.followsMe = false,
     this.isBlocked = false,
+    this.isPrivate = false,
+    this.canSee = true,
   });
 
   /// Reads a row from the `profile_summaries` view.
@@ -49,6 +51,8 @@ class Profile {
         isFollowing: boolOf(json['is_following']),
         followsMe: boolOf(json['follows_me']),
         isBlocked: boolOf(json['is_blocked']),
+        isPrivate: boolOf(json['is_private']),
+        canSee: json['can_see'] != false,
       );
 
   final String id;
@@ -72,6 +76,13 @@ class Profile {
   final bool isFollowing;
   final bool followsMe;
   final bool isBlocked;
+
+  /// Private profiles post anonymously in communities and show their details
+  /// only to people they follow.
+  final bool isPrivate;
+
+  /// False when this is someone else's private profile you can't see.
+  final bool canSee;
 
   UserRef get ref => UserRef(
         id: id,
@@ -127,6 +138,8 @@ class Profile {
       isFollowing: isFollowing ?? this.isFollowing,
       followsMe: followsMe,
       isBlocked: isBlocked ?? this.isBlocked,
+      isPrivate: isPrivate,
+      canSee: canSee,
     );
   }
 }

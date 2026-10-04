@@ -53,10 +53,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     return profile.when(
       loading: () => Scaffold(appBar: AppBar(), body: const ListSkeleton(count: 4)),
-      error: (error, _) => Scaffold(appBar: AppBar(), body: ErrorState(error: error)),
+      error: (error, _) => Scaffold(
+        appBar: AppBar(),
+        body: ErrorState(error: error),
+      ),
       data: (data) {
         if (data == null) {
-          return Scaffold(appBar: AppBar(), body: const EmptyState(icon: AppIcons.user, title: 'Profile not found'));
+          return Scaffold(
+            appBar: AppBar(),
+            body: const EmptyState(icon: AppIcons.user, title: 'Profile not found'),
+          );
         }
         return _page(context, data, isSelf);
       },
@@ -79,7 +85,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         actions: [
           if (isSelf) ...[
             IconButton(tooltip: 'Saved', icon: const Icon(AppIcons.bookmark), onPressed: () => context.push('/saved')),
-            IconButton(tooltip: 'Settings', icon: const Icon(AppIcons.settings), onPressed: () => context.push('/settings')),
+            IconButton(
+              tooltip: 'Settings',
+              icon: const Icon(AppIcons.settings),
+              onPressed: () => context.push('/settings'),
+            ),
           ] else
             IconButton(tooltip: 'More', icon: const Icon(AppIcons.more), onPressed: () => _otherMenu(profile)),
         ],
@@ -95,52 +105,78 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         },
         child: CustomScrollView(
           slivers: [
-            SliverToBoxAdapter(child: _Header(profile: profile, isSelf: isSelf)),
             SliverToBoxAdapter(
-              child: Container(
-                decoration: BoxDecoration(border: Border(bottom: BorderSide(color: c.line))),
-                child: Row(
-                  children: [
-                    for (final tab in _Tab.values)
-                      Expanded(
-                        child: InkWell(
-                          onTap: () => setState(() => _tab = tab),
-                          child: Container(
-                            height: 46,
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              border: Border(bottom: BorderSide(color: _tab == tab ? c.ink : Colors.transparent, width: 2.5)),
-                            ),
-                            child: Text(
-                              switch (tab) { _Tab.posts => 'Posts', _Tab.reels => 'Reels', _Tab.about => 'About' },
-                              style: context.text.titleSmall!.copyWith(color: _tab == tab ? c.ink : c.inkSubtle),
+              child: _Header(profile: profile, isSelf: isSelf),
+            ),
+            if (!isSelf && !profile.canSee)
+              SliverToBoxAdapter(
+                child: Container(
+                  decoration: BoxDecoration(
+                    border: Border(top: BorderSide(color: c.line)),
+                  ),
+                  child: EmptyState(
+                    icon: AppIcons.lock,
+                    title: 'This profile is private',
+                    message:
+                        '${profile.ref.firstName} only shares their posts and details with people they follow. '
+                        'What they post in communities shows up anonymously.',
+                  ),
+                ),
+              )
+            else ...[
+              SliverToBoxAdapter(
+                child: Container(
+                  decoration: BoxDecoration(
+                    border: Border(bottom: BorderSide(color: c.line)),
+                  ),
+                  child: Row(
+                    children: [
+                      for (final tab in _Tab.values)
+                        Expanded(
+                          child: InkWell(
+                            onTap: () => setState(() => _tab = tab),
+                            child: Container(
+                              height: 46,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                border: Border(
+                                  bottom: BorderSide(color: _tab == tab ? c.ink : Colors.transparent, width: 2.5),
+                                ),
+                              ),
+                              child: Text(switch (tab) {
+                                _Tab.posts => 'Posts',
+                                _Tab.reels => 'Reels',
+                                _Tab.about => 'About',
+                              }, style: context.text.titleSmall!.copyWith(color: _tab == tab ? c.ink : c.inkSubtle)),
                             ),
                           ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-            if (_tab == _Tab.about)
-              SliverToBoxAdapter(child: _About(profile: profile, isSelf: isSelf))
-            else if (_tab == _Tab.reels)
-              _ReelGrid(value: posts)
-            else
-              PagedSliverList<Post>(
-                value: posts,
-                onLoadMore: notifier.loadMore,
-                onRetry: () => ref.invalidate(userPostsProvider(key)),
-                skeleton: const Skeleton(child: Column(children: [PostSkeleton(), PostSkeleton()])),
-                empty: EmptyState(
-                  icon: AppIcons.textPost,
-                  title: isSelf ? 'Share your first post' : 'No posts yet',
-                  actionLabel: isSelf ? 'Write a post' : null,
-                  onAction: () => context.push('/compose'),
-                  compact: true,
+              if (_tab == _Tab.about)
+                SliverToBoxAdapter(
+                  child: _About(profile: profile, isSelf: isSelf),
+                )
+              else if (_tab == _Tab.reels)
+                _ReelGrid(value: posts)
+              else
+                PagedSliverList<Post>(
+                  value: posts,
+                  onLoadMore: notifier.loadMore,
+                  onRetry: () => ref.invalidate(userPostsProvider(key)),
+                  skeleton: const Skeleton(child: Column(children: [PostSkeleton(), PostSkeleton()])),
+                  empty: EmptyState(
+                    icon: AppIcons.textPost,
+                    title: isSelf ? 'Share your first post' : 'No posts yet',
+                    actionLabel: isSelf ? 'Write a post' : null,
+                    onAction: () => context.push('/compose'),
+                    compact: true,
+                  ),
+                  itemBuilder: (_, post, _) => PostCard(post: post),
                 ),
-                itemBuilder: (_, post, _) => PostCard(post: post),
-              ),
+            ],
           ],
         ),
       ),
@@ -202,20 +238,20 @@ class _Header extends ConsumerWidget {
     final online = ref.watch(onlineUsersProvider).contains(profile.id);
 
     Widget stat(String value, String label, VoidCallback? onTap) => Expanded(
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(Radii.md),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Column(
-                children: [
-                  Text(value, style: context.text.headlineSmall),
-                  Text(label, style: context.text.bodySmall),
-                ],
-              ),
-            ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(Radii.md),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Column(
+            children: [
+              Text(value, style: context.text.headlineSmall),
+              Text(label, style: context.text.bodySmall),
+            ],
           ),
-        );
+        ),
+      ),
+    );
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(Space.gutter, Space.sm, Space.gutter, Space.lg),
@@ -226,13 +262,50 @@ class _Header extends ConsumerWidget {
             children: [
               UserAvatar(name: profile.fullName, url: profile.avatarUrl, size: 84, online: online && !isSelf),
               const SizedBox(width: Space.md),
-              stat(compactCount(profile.postsCount), 'posts', null),
-              stat(compactCount(profile.followersCount + followerDelta), 'followers', () => context.push('/u/${profile.username}/followers')),
-              stat(compactCount(profile.followingCount), 'following', () => context.push('/u/${profile.username}/following')),
+              if (isSelf || profile.canSee) ...[
+                stat(compactCount(profile.postsCount), 'posts', null),
+                stat(
+                  compactCount(profile.followersCount + followerDelta),
+                  'followers',
+                  () => context.push('/u/${profile.username}/followers'),
+                ),
+                stat(
+                  compactCount(profile.followingCount),
+                  'following',
+                  () => context.push('/u/${profile.username}/following'),
+                ),
+              ] else
+                Expanded(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(AppIcons.lock, size: 16, color: c.inkMuted),
+                      const SizedBox(width: 6),
+                      Text('Private profile', style: context.text.titleSmall!.copyWith(color: c.inkMuted)),
+                    ],
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: Space.md),
-          NameLine(name: profile.fullName, verified: profile.isVerified, style: context.text.headlineMedium),
+          Row(
+            children: [
+              Flexible(
+                child: NameLine(
+                  name: profile.fullName,
+                  verified: profile.isVerified,
+                  style: context.text.headlineMedium,
+                ),
+              ),
+              if (profile.isPrivate && (isSelf || profile.canSee)) ...[
+                const SizedBox(width: 8),
+                Tooltip(
+                  message: isSelf ? 'Your profile is private' : 'Private profile',
+                  child: Icon(AppIcons.lock, size: 18, color: c.inkMuted),
+                ),
+              ],
+            ],
+          ),
           if (profile.academicLine.isNotEmpty) ...[
             const SizedBox(height: 4),
             GestureDetector(
@@ -241,7 +314,9 @@ class _Header extends ConsumerWidget {
                 children: [
                   Icon(AppIcons.graduation, size: 15, color: c.inkMuted),
                   const SizedBox(width: 6),
-                  Expanded(child: Text(profile.academicLine, style: context.text.bodyMedium!.copyWith(color: c.inkMuted))),
+                  Expanded(
+                    child: Text(profile.academicLine, style: context.text.bodyMedium!.copyWith(color: c.inkMuted)),
+                  ),
                 ],
               ),
             ),
@@ -250,10 +325,7 @@ class _Header extends ConsumerWidget {
             const SizedBox(height: Space.sm),
             Text(profile.bio!, style: context.text.bodyMedium),
           ],
-          if (profile.followsMe && !isSelf) ...[
-            const SizedBox(height: Space.sm),
-            const Tag(label: 'Follows you'),
-          ],
+          if (profile.followsMe && !isSelf) ...[const SizedBox(height: Space.sm), const Tag(label: 'Follows you')],
           const SizedBox(height: Space.lg),
           if (isSelf)
             Row(
@@ -278,7 +350,13 @@ class _Header extends ConsumerWidget {
               ],
             )
           else if (profile.isBlocked)
-            const AppButton(label: 'Blocked', variant: ButtonVariant.secondary, expand: true, size: ButtonSize.medium, onPressed: null)
+            const AppButton(
+              label: 'Blocked',
+              variant: ButtonVariant.secondary,
+              expand: true,
+              size: ButtonSize.medium,
+              onPressed: null,
+            )
           else
             Row(
               children: [
@@ -330,11 +408,18 @@ class _ReelGrid extends StatelessWidget {
     final items = (value.value?.items as List<Post>?) ?? const <Post>[];
     if (value.isLoading && items.isEmpty) return const SliverToBoxAdapter(child: CenteredLoader());
     if (items.isEmpty) {
-      return const SliverToBoxAdapter(child: EmptyState(icon: AppIcons.reels, title: 'No reels yet', compact: true));
+      return const SliverToBoxAdapter(
+        child: EmptyState(icon: AppIcons.reels, title: 'No reels yet', compact: true),
+      );
     }
     final c = context.colors;
     return SliverGrid.builder(
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, childAspectRatio: 9 / 16, mainAxisSpacing: 2, crossAxisSpacing: 2),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        childAspectRatio: 9 / 16,
+        mainAxisSpacing: 2,
+        crossAxisSpacing: 2,
+      ),
       itemCount: items.length,
       itemBuilder: (_, i) {
         final reel = items[i];
@@ -348,10 +433,21 @@ class _ReelGrid extends StatelessWidget {
                 AppImage(thumb)
               else
                 DecoratedBox(
-                  decoration: BoxDecoration(gradient: LinearGradient(colors: [c.ink, c.accent], begin: Alignment.topLeft, end: Alignment.bottomRight)),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [c.ink, c.accent],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                  ),
                   child: Padding(
                     padding: const EdgeInsets.all(8),
-                    child: Text(reel.body ?? '', maxLines: 4, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 12)),
+                    child: Text(
+                      reel.body ?? '',
+                      maxLines: 4,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                    ),
                   ),
                 ),
               Positioned(
@@ -361,7 +457,10 @@ class _ReelGrid extends StatelessWidget {
                   children: [
                     const Icon(AppIcons.play, size: 12, color: Colors.white),
                     const SizedBox(width: 3),
-                    Text(compactCount(reel.viewsCount), style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
+                    Text(
+                      compactCount(reel.viewsCount),
+                      style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700),
+                    ),
                   ],
                 ),
               ),
@@ -399,7 +498,11 @@ class _About extends ConsumerWidget {
           if (profile.interests.isNotEmpty) ...[
             Text('Interests', style: context.text.headlineSmall),
             const SizedBox(height: Space.sm),
-            Wrap(spacing: 8, runSpacing: 8, children: [for (final i in profile.interests) Tag(label: Interests.label(i))]),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [for (final i in profile.interests) Tag(label: Interests.label(i))],
+            ),
             const SizedBox(height: Space.xl),
           ],
           Row(
@@ -418,20 +521,30 @@ class _About extends ConsumerWidget {
             loading: () => const CenteredLoader(),
             error: (e, _) => ErrorState(error: e, compact: true),
             data: (list) => list.isEmpty
-                ? Text(isSelf ? 'Add hackathon wins, certifications and more.' : 'Nothing added yet.', style: context.text.bodySmall)
+                ? Text(
+                    isSelf ? 'Add hackathon wins, certifications and more.' : 'Nothing added yet.',
+                    style: context.text.bodySmall,
+                  )
                 : Column(
                     children: [
                       for (final a in list)
                         Container(
                           margin: const EdgeInsets.only(bottom: Space.sm),
                           padding: const EdgeInsets.all(Space.md),
-                          decoration: BoxDecoration(color: c.surface, borderRadius: BorderRadius.circular(Radii.md), border: Border.all(color: c.line)),
+                          decoration: BoxDecoration(
+                            color: c.surface,
+                            borderRadius: BorderRadius.circular(Radii.md),
+                            border: Border.all(color: c.line),
+                          ),
                           child: Row(
                             children: [
                               Container(
                                 width: 40,
                                 height: 40,
-                                decoration: BoxDecoration(color: c.warningSoft, borderRadius: BorderRadius.circular(12)),
+                                decoration: BoxDecoration(
+                                  color: c.warningSoft,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                                 child: Icon(AppIcons.trophyFill, color: c.warning, size: 20),
                               ),
                               const SizedBox(width: 12),
@@ -503,7 +616,12 @@ class _About extends ConsumerWidget {
                 runSpacing: 8,
                 children: [
                   for (final e in Achievement.categories.entries)
-                    PillChip(label: e.value, dense: true, selected: category == e.key, onTap: () => setSheet(() => category = e.key)),
+                    PillChip(
+                      label: e.value,
+                      dense: true,
+                      selected: category == e.key,
+                      onTap: () => setSheet(() => category = e.key),
+                    ),
                 ],
               ),
               const SizedBox(height: Space.xl),
@@ -513,7 +631,9 @@ class _About extends ConsumerWidget {
                 onPressed: () async {
                   if (title.text.trim().length < 2) return;
                   try {
-                    await ref.read(profileRepositoryProvider).addAchievement(
+                    await ref
+                        .read(profileRepositoryProvider)
+                        .addAchievement(
                           title: title.text.trim(),
                           category: category,
                           issuer: issuer.text.trim().isEmpty ? null : issuer.text.trim(),

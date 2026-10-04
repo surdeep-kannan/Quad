@@ -73,6 +73,14 @@ class ChatRepository {
     return rows.map(Message.fromJson).toList().reversed.toList();
   }
 
+  /// Which of these anonymous messages the signed-in student sent.
+  Future<Set<String>> myAnonymousMessages(Iterable<String> ids) async {
+    final list = ids.toList();
+    if (list.isEmpty) return {};
+    final rows = await _client.from('message_authors').select('message_id').inFilter('message_id', list);
+    return {for (final row in rows) row['message_id'] as String};
+  }
+
   Future<Message?> message(String id) async {
     final row = await _client.from('messages').select().eq('id', id).maybeSingle();
     return row == null ? null : Message.fromJson(row);

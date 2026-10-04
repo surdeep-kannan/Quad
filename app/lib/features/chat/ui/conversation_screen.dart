@@ -26,6 +26,7 @@ import '../../events/providers.dart';
 import '../../events/ui/event_poster.dart';
 import '../../moderation/ui/report_sheet.dart';
 import '../../posts/providers.dart';
+import '../../profile/providers.dart';
 import '../data/chat_models.dart';
 import '../providers.dart';
 import 'chat_list_screen.dart';
@@ -43,10 +44,16 @@ class RoomScreen extends ConsumerWidget {
     final room = ref.watch(roomProvider(roomId));
     return room.when(
       loading: () => Scaffold(appBar: AppBar(), body: const CenteredLoader()),
-      error: (error, _) => Scaffold(appBar: AppBar(), body: ErrorState(error: error, onRetry: () => ref.invalidate(roomProvider(roomId)))),
+      error: (error, _) => Scaffold(
+        appBar: AppBar(),
+        body: ErrorState(error: error, onRetry: () => ref.invalidate(roomProvider(roomId))),
+      ),
       data: (data) {
         if (data == null) {
-          return Scaffold(appBar: AppBar(), body: const EmptyState(icon: AppIcons.hash, title: 'Room not found'));
+          return Scaffold(
+            appBar: AppBar(),
+            body: const EmptyState(icon: AppIcons.hash, title: 'Room not found'),
+          );
         }
         if (!data.isMember) {
           return Scaffold(
@@ -80,7 +87,13 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   final _scroll = ScrollController();
   Message? _replyTo;
   Message? _editing;
+  bool _anonymous = false;
   late final ChatList _chatList = ref.read(chatListProvider.notifier);
+
+  /// Room messages from private profiles are always anonymous.
+  bool get _mustBeAnonymous => widget.room != null && (ref.read(myProfileProvider).value?.isPrivate ?? false);
+
+  bool get _sendAnonymously => widget.room != null && (_anonymous || _mustBeAnonymous);
 
   @override
   void initState() {
@@ -119,7 +132,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       if (editing != null) {
         await _controller.edit(editing, text);
       } else {
-        await _controller.send(text: text, replyToId: replyTo?.id);
+        await _controller.send(text: text, replyToId: replyTo?.id, anonymous: _sendAnonymously);
       }
     } catch (error) {
       if (mounted) showToast(context, friendlyError(error), error: true);
@@ -166,7 +179,12 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
   Future<void> _sendFiles(List<PickedFile> files) async {
     try {
-      await _controller.send(files: files, text: _input.text.trim().isEmpty ? null : _input.text.trim(), replyToId: _replyTo?.id);
+      await _controller.send(
+        files: files,
+        text: _input.text.trim().isEmpty ? null : _input.text.trim(),
+        replyToId: _replyTo?.id,
+        anonymous: _sendAnonymously,
+      );
       _input.clear();
       setState(() => _replyTo = null);
     } catch (error) {
@@ -198,7 +216,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                           if (mounted) showToast(context, friendlyError(error), error: true);
                         });
                       },
-                      child: Padding(padding: const EdgeInsets.all(8), child: Text(emoji, style: const TextStyle(fontSize: 28))),
+                      child: Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Text(emoji, style: const TextStyle(fontSize: 28)),
+                      ),
                     ),
                 ],
               ),
@@ -297,22 +318,37 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       ),
       body: state.when(
         loading: () => const CenteredLoader(),
-        error: (error, _) => ErrorState(error: error, onRetry: () => ref.invalidate(conversationProvider(widget.conversationId))),
+        error: (error, _) =>
+            ErrorState(error: error, onRetry: () => ref.invalidate(conversationProvider(widget.conversationId))),
         data: (chat) => Column(
           children: [
             if (widget.room != null) RoomVoiceBar(room: widget.room!),
-            Expanded(child: _MessageList(chat: chat, scroll: _scroll, onLongPress: _messageMenu, onSwipeReply: (m) {
-              HapticFeedback.selectionClick();
-              setState(() => _replyTo = m);
-              _focus.requestFocus();
-            })),
+            Expanded(
+              child: _MessageList(
+                chat: chat,
+                scroll: _scroll,
+                onLongPress: _messageMenu,
+                onSwipeReply: (m) {
+                  HapticFeedback.selectionClick();
+                  setState(() => _replyTo = m);
+                  _focus.requestFocus();
+                },
+              ),
+            ),
             if (chat.typing.isNotEmpty) _TypingLine(chat: chat),
             _Composer(
               controller: _input,
               focusNode: _focus,
               replyTo: _replyTo,
-              replyName: _replyTo == null ? null : chat.people[_replyTo!.senderId]?.fullName,
+              replyName: _replyTo == null ? null : senderOf(chat, _replyTo!)?.fullName,
               editing: _editing != null,
+              anonymous: widget.room == null ? null : _sendAnonymously,
+              anonymousLocked: _mustBeAnonymous,
+              onAnonymousToggle: () {
+                HapticFeedback.selectionClick();
+                setState(() => _anonymous = !_anonymous);
+                showToast(context, _anonymous ? 'Your messages here are now anonymous' : 'Sending as yourself');
+              },
               onCancel: () => setState(() {
                 _replyTo = null;
                 if (_editing != null) _input.clear();
@@ -320,7 +356,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
               }),
               onAttach: _attach,
               onSend: _send,
-              onTyping: _controller.notifyTyping,
+              onTyping: () => _controller.notifyTyping(anonymous: _sendAnonymously),
             ),
           ],
         ),
@@ -347,7 +383,12 @@ class _Header extends ConsumerWidget {
     if (room != null || info.type == 'room') {
       final community = info.room?.community;
       title = '#${room?.name ?? info.title ?? 'room'}';
-      avatar = CommunityAvatar(name: community?.name ?? title, color: community?.color ?? 0, url: community?.avatarUrl, size: 36);
+      avatar = CommunityAvatar(
+        name: community?.name ?? title,
+        color: community?.color ?? 0,
+        url: community?.avatarUrl,
+        size: 36,
+      );
       subtitle = community?.name ?? 'Room';
     } else if (info.type == 'direct') {
       final other = info.members.where((m) => m.user.id != me).firstOrNull?.user;
@@ -373,7 +414,9 @@ class _Header extends ConsumerWidget {
               Text(title, style: context.text.titleMedium, maxLines: 1, overflow: TextOverflow.ellipsis),
               Text(
                 subtitle,
-                style: context.text.bodySmall!.copyWith(color: subtitle == 'Online' || subtitle == 'typing…' ? c.success : c.inkMuted),
+                style: context.text.bodySmall!.copyWith(
+                  color: subtitle == 'Online' || subtitle == 'typing…' ? c.success : c.inkMuted,
+                ),
                 maxLines: 1,
               ),
             ],
@@ -383,6 +426,15 @@ class _Header extends ConsumerWidget {
     );
   }
 }
+
+/// Who to show for [message]: its anonymous alias, or the member who sent it.
+UserRef? senderOf(ChatState chat, Message message) => message.isAnonymous
+    ? UserRef(id: '', username: '', fullName: message.anonName ?? 'anonymous', isAnonymous: true)
+    : chat.people[message.senderId];
+
+/// Groups consecutive messages from the same person. Every anonymous message
+/// has its own alias, so they never group.
+String _groupKey(Message message) => message.isAnonymous ? 'anon:${message.id}' : (message.senderId ?? '');
 
 class _MessageList extends ConsumerWidget {
   const _MessageList({required this.chat, required this.scroll, required this.onLongPress, required this.onSwipeReply});
@@ -409,13 +461,15 @@ class _MessageList extends ConsumerWidget {
         final message = messages[index];
         final newer = index > 0 ? messages[index - 1] : null;
         final older = index < messages.length - 1 ? messages[index + 1] : null;
-        final mine = message.senderId == me;
-        final startsGroup = older == null ||
-            older.senderId != message.senderId ||
+        final mine = me != null && chat.isMine(message, me);
+        final startsGroup =
+            older == null ||
+            _groupKey(older) != _groupKey(message) ||
             older.isSystem ||
             message.createdAt.difference(older.createdAt).inMinutes > 5;
-        final endsGroup = newer == null ||
-            newer.senderId != message.senderId ||
+        final endsGroup =
+            newer == null ||
+            _groupKey(newer) != _groupKey(message) ||
             newer.isSystem ||
             newer.createdAt.difference(message.createdAt).inMinutes > 5;
         final newDay = older == null || !_sameDay(older.createdAt, message.createdAt);
@@ -429,18 +483,22 @@ class _MessageList extends ConsumerWidget {
               _Bubble(
                 message: message,
                 mine: mine,
-                sender: chat.people[message.senderId],
+                sender: senderOf(chat, message),
                 avatarColumn: chat.info.type != 'direct',
                 showName: startsGroup && !mine && chat.info.type != 'direct',
                 showAvatar: endsGroup && !mine && chat.info.type != 'direct',
                 tail: endsGroup,
                 replyTo: chat.byId(message.replyToId),
-                replyName: chat.people[chat.byId(message.replyToId)?.senderId]?.firstName,
+                replyName: switch (chat.byId(message.replyToId)) {
+                  final reply? => reply.isAnonymous ? reply.anonName : chat.people[reply.senderId]?.firstName,
+                  null => null,
+                },
                 gapAbove: startsGroup ? 10 : 2,
                 onLongPress: () => onLongPress(message, mine),
                 onSwipeReply: () => onSwipeReply(message),
                 onRetry: () => ref.read(conversationProvider(message.conversationId).notifier).retry(message),
-                onReact: (emoji) => ref.read(conversationProvider(message.conversationId).notifier).toggleReaction(message, emoji),
+                onReact: (emoji) =>
+                    ref.read(conversationProvider(message.conversationId).notifier).toggleReaction(message, emoji),
                 me: me,
               ),
           ],
@@ -566,7 +624,10 @@ class _BubbleState extends State<_Bubble> {
 
     Widget content;
     if (message.isDeleted) {
-      content = Text('Message unsent', style: context.text.bodyMedium!.copyWith(color: fg.withValues(alpha: 0.6), fontStyle: FontStyle.italic));
+      content = Text(
+        'Message unsent',
+        style: context.text.bodyMedium!.copyWith(color: fg.withValues(alpha: 0.6), fontStyle: FontStyle.italic),
+      );
     } else {
       content = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -584,8 +645,16 @@ class _BubbleState extends State<_Bubble> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(widget.replyName ?? 'Reply', style: context.text.labelSmall!.copyWith(color: mine ? Colors.white70 : c.accentInk)),
-                  Text(widget.replyTo!.preview, maxLines: 2, overflow: TextOverflow.ellipsis, style: context.text.bodySmall!.copyWith(color: fg.withValues(alpha: 0.8))),
+                  Text(
+                    widget.replyName ?? 'Reply',
+                    style: context.text.labelSmall!.copyWith(color: mine ? Colors.white70 : c.accentInk),
+                  ),
+                  Text(
+                    widget.replyTo!.preview,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.text.bodySmall!.copyWith(color: fg.withValues(alpha: 0.8)),
+                  ),
                 ],
               ),
             ),
@@ -603,7 +672,12 @@ class _BubbleState extends State<_Bubble> {
 
     final bubble = Container(
       constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.76),
-      padding: EdgeInsets.fromLTRB(message.attachments.isNotEmpty ? 4 : 12, message.attachments.isNotEmpty ? 4 : 8, message.attachments.isNotEmpty ? 4 : 12, 8),
+      padding: EdgeInsets.fromLTRB(
+        message.attachments.isNotEmpty ? 4 : 12,
+        message.attachments.isNotEmpty ? 4 : 8,
+        message.attachments.isNotEmpty ? 4 : 12,
+        8,
+      ),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: borderRadius,
@@ -621,8 +695,18 @@ class _BubbleState extends State<_Bubble> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (message.editedAt != null && !message.isDeleted)
-                  Text('edited · ', style: context.text.labelSmall!.copyWith(color: fg.withValues(alpha: 0.5), fontSize: 10)),
-                Text(clockTime(message.createdAt), style: context.text.labelSmall!.copyWith(color: fg.withValues(alpha: 0.55), fontSize: 10.5)),
+                  Text(
+                    'edited · ',
+                    style: context.text.labelSmall!.copyWith(color: fg.withValues(alpha: 0.5), fontSize: 10),
+                  ),
+                Text(
+                  clockTime(message.createdAt),
+                  style: context.text.labelSmall!.copyWith(color: fg.withValues(alpha: 0.55), fontSize: 10.5),
+                ),
+                if (message.isAnonymous) ...[
+                  const SizedBox(width: 4),
+                  Icon(AppIcons.anonymous, size: 11, color: fg.withValues(alpha: 0.55)),
+                ],
                 if (mine) ...[
                   const SizedBox(width: 3),
                   Icon(
@@ -662,7 +746,10 @@ class _BubbleState extends State<_Bubble> {
                 left: 4,
                 top: 0,
                 bottom: 0,
-                child: Opacity(opacity: (_drag / 56).clamp(0, 1), child: Icon(AppIcons.reply, color: c.inkMuted)),
+                child: Opacity(
+                  opacity: (_drag / 56).clamp(0, 1),
+                  child: Icon(AppIcons.reply, color: c.inkMuted),
+                ),
               ),
             AnimatedContainer(
               duration: Duration(milliseconds: _drag == 0 ? 180 : 0),
@@ -678,8 +765,10 @@ class _BubbleState extends State<_Bubble> {
                           ? Padding(
                               padding: const EdgeInsets.only(bottom: 2),
                               child: GestureDetector(
-                                onTap: () => context.push('/u/${widget.sender!.username}'),
-                                child: UserAvatar(name: widget.sender!.fullName, url: widget.sender!.avatarUrl, size: 28),
+                                onTap: widget.sender!.isAnonymous
+                                    ? null
+                                    : () => context.push('/u/${widget.sender!.username}'),
+                                child: AuthorAvatar(user: widget.sender!, size: 28),
                               ),
                             )
                           : null,
@@ -691,7 +780,13 @@ class _BubbleState extends State<_Bubble> {
                         if (widget.showName && widget.sender != null)
                           Padding(
                             padding: const EdgeInsets.only(left: 12, bottom: 3),
-                            child: Text(widget.sender!.fullName, style: context.text.labelSmall!.copyWith(color: c.inkMuted)),
+                            child: Text(
+                              widget.sender!.fullName,
+                              style: context.text.labelSmall!.copyWith(
+                                color: c.inkMuted,
+                                fontStyle: widget.sender!.isAnonymous ? FontStyle.italic : null,
+                              ),
+                            ),
                           ),
                         bubble,
                         if (reactions.isNotEmpty)
@@ -724,7 +819,10 @@ class _BubbleState extends State<_Bubble> {
                             onTap: widget.onRetry,
                             child: Padding(
                               padding: const EdgeInsets.only(top: 2, right: 4),
-                              child: Text('Not sent. Tap to retry', style: context.text.labelSmall!.copyWith(color: c.danger)),
+                              child: Text(
+                                'Not sent. Tap to retry',
+                                style: context.text.labelSmall!.copyWith(color: c.danger),
+                              ),
                             ),
                           ),
                       ],
@@ -806,8 +904,16 @@ class _AttachmentView extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(attachment.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: context.text.labelMedium!.copyWith(color: fg)),
-                      Text(fileSize(attachment.size), style: context.text.labelSmall!.copyWith(color: fg.withValues(alpha: 0.6))),
+                      Text(
+                        attachment.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.text.labelMedium!.copyWith(color: fg),
+                      ),
+                      Text(
+                        fileSize(attachment.size),
+                        style: context.text.labelSmall!.copyWith(color: fg.withValues(alpha: 0.6)),
+                      ),
                     ],
                   ),
                 ),
@@ -845,10 +951,14 @@ class _SharedPost extends ConsumerWidget {
                 children: [
                   Row(
                     children: [
-                      UserAvatar(name: post.author.fullName, url: post.author.avatarUrl, size: 20),
+                      AuthorAvatar(user: post.author, size: 20),
                       const SizedBox(width: 6),
                       Expanded(
-                        child: Text(post.author.fullName, style: context.text.labelMedium!.copyWith(color: fg), maxLines: 1),
+                        child: Text(
+                          post.author.fullName,
+                          style: context.text.labelMedium!.copyWith(color: fg),
+                          maxLines: 1,
+                        ),
                       ),
                     ],
                   ),
@@ -926,6 +1036,9 @@ class _Composer extends StatelessWidget {
     required this.onAttach,
     required this.onSend,
     required this.onTyping,
+    required this.anonymous,
+    required this.anonymousLocked,
+    required this.onAnonymousToggle,
   });
 
   final TextEditingController controller;
@@ -938,11 +1051,20 @@ class _Composer extends StatelessWidget {
   final VoidCallback onSend;
   final VoidCallback onTyping;
 
+  /// Whether messages go out anonymously; null where that isn't offered
+  /// (only community rooms allow it).
+  final bool? anonymous;
+  final bool anonymousLocked;
+  final VoidCallback onAnonymousToggle;
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
     return Container(
-      decoration: BoxDecoration(color: c.surface, border: Border(top: BorderSide(color: c.line))),
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border(top: BorderSide(color: c.line)),
+      ),
       padding: EdgeInsets.fromLTRB(6, 6, 6, 6 + context.safePadding.bottom),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -958,9 +1080,17 @@ class _Composer extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(editing ? 'Editing message' : 'Replying to ${replyName ?? 'message'}', style: context.text.labelMedium!.copyWith(color: c.accentInk)),
+                        Text(
+                          editing ? 'Editing message' : 'Replying to ${replyName ?? 'message'}',
+                          style: context.text.labelMedium!.copyWith(color: c.accentInk),
+                        ),
                         if (replyTo != null)
-                          Text(replyTo!.preview, maxLines: 1, overflow: TextOverflow.ellipsis, style: context.text.bodySmall),
+                          Text(
+                            replyTo!.preview,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: context.text.bodySmall,
+                          ),
                       ],
                     ),
                   ),
@@ -971,7 +1101,23 @@ class _Composer extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              IconButton(tooltip: 'Attach', icon: Icon(AppIcons.plus, color: c.inkMuted), onPressed: editing ? null : onAttach),
+              IconButton(
+                tooltip: 'Attach',
+                icon: Icon(AppIcons.plus, color: c.inkMuted),
+                onPressed: editing ? null : onAttach,
+              ),
+              if (anonymous != null && !editing)
+                IconButton(
+                  tooltip: anonymousLocked
+                      ? 'Your profile is private, so you\'re always anonymous here'
+                      : (anonymous! ? 'Sending anonymously' : 'Send anonymously'),
+                  onPressed: anonymousLocked ? null : onAnonymousToggle,
+                  style: anonymous! ? IconButton.styleFrom(backgroundColor: c.accentSoft) : null,
+                  icon: Icon(
+                    anonymous! ? AppIcons.anonymous : AppIcons.anonymousOutline,
+                    color: anonymous! ? c.accentInk : c.inkMuted,
+                  ),
+                ),
               Expanded(
                 child: TextField(
                   controller: controller,
@@ -982,11 +1128,17 @@ class _Composer extends StatelessWidget {
                   onChanged: (_) => onTyping(),
                   style: context.text.bodyMedium,
                   decoration: InputDecoration(
-                    hintText: 'Message',
+                    hintText: anonymous ?? false ? 'Message anonymously' : 'Message',
                     contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(22), borderSide: BorderSide.none),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(22), borderSide: BorderSide.none),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(22), borderSide: BorderSide(color: c.lineStrong)),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(22),
+                      borderSide: BorderSide.none,
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(22),
+                      borderSide: BorderSide(color: c.lineStrong),
+                    ),
                   ),
                 ),
               ),
@@ -1002,7 +1154,11 @@ class _Composer extends StatelessWidget {
                     child: IconButton(
                       tooltip: editing ? 'Save' : 'Send',
                       onPressed: empty ? null : onSend,
-                      icon: Icon(editing ? AppIcons.check : AppIcons.send, color: empty ? c.inkSubtle : Colors.white, size: 20),
+                      icon: Icon(
+                        editing ? AppIcons.check : AppIcons.send,
+                        color: empty ? c.inkSubtle : Colors.white,
+                        size: 20,
+                      ),
                     ),
                   );
                 },

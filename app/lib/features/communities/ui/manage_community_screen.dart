@@ -18,12 +18,13 @@ import '../data/community.dart';
 import '../data/community_repository.dart';
 import '../providers.dart';
 import 'members_screen.dart';
+import 'roles.dart';
 
 final _reportQueueProvider = FutureProvider.autoDispose.family<List<Report>, String>((ref, communityId) {
   return ref.watch(moderationRepositoryProvider).queue(communityId: communityId);
 });
 
-/// Moderator tools: join requests, the report queue and community details.
+/// Staff tools. Each tab appears only for people whose roles allow it.
 class ManageCommunityScreen extends ConsumerWidget {
   const ManageCommunityScreen({super.key, required this.slug});
 
@@ -33,24 +34,42 @@ class ManageCommunityScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final community = ref.watch(communityProvider(slug)).value;
     if (community == null) return const Scaffold(body: CenteredLoader());
+    bool can(String permission) => community.can(permission);
+    final tabs = <(String, Widget)>[
+      if (can(CommunityPermissions.viewReports)) ('Reports', _ReportQueue(community: community)),
+      if (can(CommunityPermissions.manageMembers)) ('Requests', MemberList(community: community, status: 'pending')),
+      if (can(CommunityPermissions.manageRoles) ||
+          can(CommunityPermissions.manageMembers) ||
+          can(CommunityPermissions.banMembers))
+        ('Members', MemberList(community: community)),
+      if (can(CommunityPermissions.manageRoles)) ('Roles', RolesTab(community: community)),
+      if (can(CommunityPermissions.banMembers)) ('Banned', MemberList(community: community, status: 'banned')),
+      if (can(CommunityPermissions.manageCommunity)) ('Details', _Details(community: community)),
+    ];
+    final appBarLeading = IconButton(tooltip: 'Back', icon: const Icon(AppIcons.back), onPressed: () => context.pop());
+    if (tabs.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(leading: appBarLeading, title: Text('Manage ${community.name}')),
+        body: const EmptyState(
+          icon: AppIcons.lock,
+          title: 'Nothing to manage',
+          message: 'Your roles here don\'t include any staff permissions.',
+        ),
+      );
+    }
     return DefaultTabController(
-      length: 3,
+      length: tabs.length,
       child: Scaffold(
         appBar: AppBar(
-          leading: IconButton(tooltip: 'Back', icon: const Icon(AppIcons.back), onPressed: () => context.pop()),
+          leading: appBarLeading,
           title: Text('Manage ${community.name}'),
-          bottom: const TabBar(
+          bottom: TabBar(
             isScrollable: true,
-            tabs: [Tab(text: 'Reports'), Tab(text: 'Requests'), Tab(text: 'Details')],
+            tabAlignment: TabAlignment.start,
+            tabs: [for (final tab in tabs) Tab(text: tab.$1)],
           ),
         ),
-        body: TabBarView(
-          children: [
-            _ReportQueue(community: community),
-            MemberList(community: community, status: 'pending'),
-            _Details(community: community),
-          ],
-        ),
+        body: TabBarView(children: [for (final tab in tabs) tab.$2]),
       ),
     );
   }
@@ -82,7 +101,12 @@ class _ReportQueue extends ConsumerWidget {
               try {
                 final moderation = ref.read(moderationRepositoryProvider);
                 if (remove && report.targetType != 'user') {
-                  await moderation.moderate(targetType: report.targetType, targetId: report.targetId, action: 'remove', reason: report.reasonLabel);
+                  await moderation.moderate(
+                    targetType: report.targetType,
+                    targetId: report.targetId,
+                    action: 'remove',
+                    reason: report.reasonLabel,
+                  );
                 }
                 await moderation.resolve(report.id, actioned: remove);
                 ref.invalidate(_reportQueueProvider(community.id));
@@ -132,7 +156,10 @@ class _ReportQueue extends ConsumerWidget {
                     Text('Reporter: "${report.details}"', style: context.text.bodySmall),
                   ],
                   const SizedBox(height: 4),
-                  Text(plural(report.reportsOnTarget, 'report'), style: context.text.labelSmall!.copyWith(color: c.inkSubtle)),
+                  Text(
+                    plural(report.reportsOnTarget, 'report'),
+                    style: context.text.labelSmall!.copyWith(color: c.inkSubtle),
+                  ),
                   const SizedBox(height: Space.md),
                   Row(
                     children: [
@@ -210,7 +237,11 @@ class _DetailsState extends ConsumerState<_Details> {
   @override
   Widget build(BuildContext context) {
     if (!widget.community.isAdmin) {
-      return const EmptyState(icon: AppIcons.lock, title: 'Admins only', message: 'Only owners and admins can edit details.');
+      return const EmptyState(
+        icon: AppIcons.lock,
+        title: 'Admins only',
+        message: 'Only owners and admins can edit details.',
+      );
     }
     return ListView(
       padding: const EdgeInsets.all(Space.xl),

@@ -232,8 +232,10 @@ async function runScenarios(db) {
     check('joining a public community is instant', status.status === 'active');
     const roomMember = await one(db, `select public.room_details.is_member from public.room_details where id = $1`, [general.id]);
     check('joining adds you to the community rooms', roomMember && roomMember.is_member === true);
-    check('members cannot promote themselves',
-      Boolean(await fails(db, `select public.set_member_role($1, $2, 'admin')`, [communityId, diya])));
+    check('members cannot give themselves roles',
+      Boolean(await fails(db,
+        `select public.set_member_roles($1, $2, array[(select id from public.community_roles where community_id = $1 and name = 'Admin')])`,
+        [communityId, diya])));
   });
 
   const count = await one(db, `select members_count from public.communities where id = $1`, [communityId]);
@@ -536,6 +538,135 @@ async function runScenarios(db) {
     await db.query(`select public.mark_all_notifications_read()`);
     const unread = await one(db, `select count(*)::int as n from public.notifications where read_at is null`);
     check('mark all read', unread.n === 0);
+  });
+
+  // Custom roles and permissions ---------------------------------------------
+  const defaults = await rows(db, `select name from public.community_roles where community_id = $1 order by position desc`, [communityId]);
+  check('communities get Admin and Moderator roles', defaults.map((r) => r.name).join(',') === 'Admin,Moderator');
+
+  let eventTeam;
+  await as(db, aarav, async () => {
+    eventTeam = (await one(db, `select public.create_community_role($1, 'Event team', 6, array['manage_events']) as id`, [communityId])).id;
+    await db.query(`select public.set_member_roles($1, $2, array[$3::uuid])`, [communityId, kabir, eventTeam]);
+  });
+  await as(db, kabir, async () => {
+    const perms = await one(db, `select my_permissions, my_rank from public.community_details where id = $1`, [communityId]);
+    check('role permissions reach the member', perms.my_permissions.includes('manage_events') && !perms.my_permissions.includes('manage_rooms'));
+    check('a role with manage_events can host community events',
+      !(await fails(db, `insert into public.events (title, starts_at, community_id) values ('Role test', now() + interval '1 day', $1)`, [communityId])));
+    check('a role without manage_rooms cannot create rooms',
+      Boolean(await fails(db, `select public.create_room($1, 'nope')`, [communityId])));
+    check('a role without manage_roles cannot create roles',
+      Boolean(await fails(db, `select public.create_community_role($1, 'Hacker', 0, array['manage_roles'])`, [communityId])));
+    check('members cannot remove the owner',
+      Boolean(await fails(db, `select public.remove_member($1, $2)`, [communityId, aarav])));
+  });
+
+  // A moderator with manage_roles can only manage roles below their rank.
+  let modRoleId;
+  await as(db, aarav, async () => {
+    modRoleId = (await one(db, `select id from public.community_roles where community_id = $1 and name = 'Moderator'`, [communityId])).id;
+    await db.query(`select public.update_community_role($1, 'Moderator', 4, array['manage_posts','manage_roles','manage_members'], 50)`, [modRoleId]);
+    await db.query(`select public.set_member_roles($1, $2, array[$3::uuid])`, [communityId, diya, modRoleId]);
+    check('owners cannot change their own roles', Boolean(await fails(db, `select public.set_member_roles($1, $2, '{}')`, [communityId, aarav])));
+  });
+  await as(db, diya, async () => {
+    check('moderators cannot edit roles at their rank',
+      Boolean(await fails(db, `select public.update_community_role($1, 'Mods', 4, array['manage_posts'], 50)`, [modRoleId])));
+    check('moderators cannot grant permissions they lack',
+      Boolean(await fails(db, `select public.create_community_role($1, 'Bans', 1, array['ban_members'])`, [communityId])));
+    const own = await one(db, `select public.create_community_role($1, 'Helpers', 3, array['manage_posts']) as id`, [communityId]);
+    check('moderators can create lower roles', Boolean(own.id));
+    check('moderators can assign lower roles to lower members',
+      !(await fails(db, `select public.set_member_roles($1, $2, array[$3::uuid, $4::uuid])`, [communityId, kabir, eventTeam, own.id])));
+    check('moderators cannot assign roles at their rank',
+      Boolean(await fails(db, `select public.set_member_roles($1, $2, array[$3::uuid])`, [communityId, kabir, modRoleId])));
+  });
+  const kabirRoles = await rows(db, `select r.name from public.community_member_roles mr join public.community_roles r on r.id = mr.role_id where mr.user_id = $1 and mr.community_id = $2 order by r.name`, [kabir, communityId]);
+  check('members can hold several roles', kabirRoles.map((r) => r.name).join(',') === 'Event team,Helpers');
+  const roleNote = await one(db, `select count(*)::int as n from public.notifications where user_id = $1 and type = 'community_role'`, [kabir]);
+  check('people are notified when given a role', roleNote.n >= 1);
+
+  // Private profiles and anonymity ---------------------------------------------
+  // Kabir hit the posting rate limit above; age those posts.
+  await db.query(`update public.posts set created_at = now() - interval '2 hours' where author_id = $1`, [kabir]);
+  await as(db, kabir, async () => {
+    await db.query(`update public.profiles set is_private = true, bio = 'secret bio' where id = $1`, [kabir]);
+  });
+  let anonPost;
+  await as(db, kabir, async () => {
+    anonPost = (await one(db, `select public.create_post('text', $1, null, 'an honest question about placements')`, [communityId])).create_post;
+    const mine = await one(db, `select author_id, author, is_mine, is_anonymous from public.post_details where id = $1`, [anonPost]);
+    check('authors still see their anonymous posts as theirs', mine.is_mine && mine.author_id === kabir && mine.is_anonymous);
+  });
+  await as(db, aarav, async () => {
+    const seen = await one(db, `select author_id, author, is_mine from public.post_details where id = $1`, [anonPost]);
+    check('private profiles post anonymously in communities',
+      seen.author_id === null && /^anonymous_[a-z]+_[a-z]+_\d{3}$/.test(seen.author.full_name) && !seen.is_mine, JSON.stringify(seen.author));
+    check('the author column cannot be read directly',
+      Boolean(await fails(db, `select author_id from public.posts where id = $1`, [anonPost])));
+    const c1 = await one(db, `insert into public.comments (post_id, body, is_anonymous) values ($1, 'anon one', true) returning id`, [anonPost]);
+    const c2 = await one(db, `insert into public.comments (post_id, body, is_anonymous) values ($1, 'anon two', true) returning id`, [anonPost]);
+    globalThis.anonComments = [c1.id, c2.id];
+    const chosen = (await one(db,
+      `select public.create_post('text', $1, null, 'asking this one anonymously', '[]'::jsonb, '{}', null, null, null, true) as id`,
+      [communityId])).id;
+    const own = await one(db, `select is_anonymous, is_mine from public.post_details where id = $1`, [chosen]);
+    check('public profiles can choose to post anonymously', own.is_anonymous && own.is_mine);
+    const profilePost = (await one(db,
+      `select public.create_post('text', null, null, 'profile posts are never anonymous', '[]'::jsonb, '{}', null, null, null, true) as id`)).id;
+    const shown = await one(db, `select is_anonymous from public.post_details where id = $1`, [profilePost]);
+    check('profile posts are never anonymous', shown.is_anonymous === false);
+  });
+  const aliases = await rows(db, `select anon_name from public.comments where id = any($1::uuid[])`, [globalThis.anonComments]);
+  check('anonymous names change on every comment',
+    aliases.length === 2 && aliases[0].anon_name && aliases[0].anon_name !== aliases[1].anon_name, JSON.stringify(aliases));
+  await as(db, kabir, async () => {
+    const seen = await rows(db, `select author_id, author from public.comment_details where id = any($1::uuid[])`, [globalThis.anonComments]);
+    check('others see anonymous commenters only by alias', seen.length === 2 && seen.every((c) => c.author_id === null && c.author.is_anonymous));
+  });
+  const anonNote = await one(db,
+    `select actor_id, data from public.notifications where user_id = $1 and type = 'post_comment' and post_id = $2 limit 1`, [kabir, anonPost]);
+  check('notifications from anonymous comments hide the actor', anonNote && anonNote.actor_id === null && anonNote.data.alias);
+  await as(db, aarav, async () => {
+    const profile = await one(db, `select bio, can_see, is_private from public.profile_summaries where id = $1`, [kabir]);
+    check('private profile details are hidden from people they do not follow', profile.bio === null && profile.can_see === false && profile.is_private);
+  });
+  await as(db, kabir, async () => {
+    await db.query(`insert into public.follows (follower_id, following_id) values ($1, $2)`, [kabir, aarav]);
+  });
+  await as(db, aarav, async () => {
+    const profile = await one(db, `select bio, can_see from public.profile_summaries where id = $1`, [kabir]);
+    check('private profiles are visible to people they follow', profile.bio === 'secret bio' && profile.can_see);
+  });
+
+  // Anonymous room messages carry no sender at all.
+  let anonMessage;
+  await as(db, kabir, async () => {
+    anonMessage = (await one(db,
+      `insert into public.messages (conversation_id, sender_id, body) values ($1, $2, 'anonymous hello') returning id`,
+      [general.conversation_id, kabir])).id;
+  });
+  const stored = await one(db, `select sender_id, anon_name, is_anonymous from public.messages where id = $1`, [anonMessage]);
+  check('anonymous room messages store no sender', stored.sender_id === null && stored.is_anonymous && stored.anon_name);
+  await as(db, aarav, async () => {
+    const authors = await rows(db, `select * from public.message_authors where message_id = $1`, [anonMessage]);
+    check('others cannot see who sent an anonymous message', authors.length === 0);
+  });
+  await as(db, kabir, async () => {
+    const authors = await rows(db, `select * from public.message_authors where message_id = $1`, [anonMessage]);
+    check('senders can find their anonymous messages', authors.length === 1);
+    const unsent = await db.query(`update public.messages set deleted_at = now() where id = $1`, [anonMessage]);
+    check('senders can unsend anonymous messages', unsent.affectedRows === 1);
+  });
+
+  // Reports on anonymous posts don't reveal the author to community moderators.
+  await as(db, diya, async () => {
+    await db.query(`select public.submit_report('post', $1, 'spam', 'anon report')`, [anonPost]);
+  });
+  await as(db, aarav, async () => {
+    const report = await one(db, `select target_user, snapshot from public.report_details where target_id = $1`, [anonPost]);
+    check('moderators do not see who wrote reported anonymous posts', report && report.target_user === null && report.snapshot.anonymous === true);
   });
 
   // Signed-out access ------------------------------------------------------

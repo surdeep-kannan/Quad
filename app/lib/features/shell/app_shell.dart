@@ -17,6 +17,12 @@ import '../notifications/providers.dart';
 import '../notifications/ui/notification_tile.dart';
 import '../profile/providers.dart';
 
+/// Private profiles don't show up as online.
+final _presenceVisibilityProvider = Provider<void>((ref) {
+  final private = ref.watch(myProfileProvider.select((profile) => profile.value?.isPrivate));
+  if (private != null) unawaited(ref.read(onlineUsersProvider.notifier).setVisible(!private));
+});
+
 /// The six tabs. Reels switches the bar to dark so video stays immersive.
 class AppShell extends ConsumerWidget {
   const AppShell({super.key, required this.shell});
@@ -29,6 +35,7 @@ class AppShell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(presenceHeartbeatProvider);
     ref.watch(onlineUsersProvider);
+    ref.watch(_presenceVisibilityProvider);
     ref.listen(incomingCallProvider, (_, call) {
       if (call != null) context.push('/call/${call.id}');
     });
@@ -53,20 +60,13 @@ class AppShell extends ConsumerWidget {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: dark || context.isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
       child: Scaffold(
-        body: Stack(
-          children: [
-            shell,
-            const _BannerLayer(),
-          ],
-        ),
+        body: Stack(children: [shell, const _BannerLayer()]),
         bottomNavigationBar: _BottomBar(
           dark: dark,
           currentIndex: shell.currentIndex,
           items: items,
           onTap: go,
-          profile: me == null
-              ? null
-              : UserAvatar(name: me.fullName, url: me.avatarUrl, size: 26),
+          profile: me == null ? null : UserAvatar(name: me.fullName, url: me.avatarUrl, size: 26),
         ),
       ),
     );
@@ -168,10 +168,7 @@ class _BottomBar extends StatelessWidget {
                 padding: const EdgeInsets.all(1.5),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  border: Border.all(
-                    color: currentIndex == items.length ? active : Colors.transparent,
-                    width: 1.6,
-                  ),
+                  border: Border.all(color: currentIndex == items.length ? active : Colors.transparent, width: 1.6),
                 ),
                 child: profile ?? Icon(AppIcons.user, color: inactive),
               ),
@@ -219,8 +216,10 @@ class _BannerLayerState extends ConsumerState<_BannerLayer> {
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 260),
         transitionBuilder: (child, animation) => SlideTransition(
-          position: Tween(begin: const Offset(0, -1.4), end: Offset.zero)
-              .animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+          position: Tween(
+            begin: const Offset(0, -1.4),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
           child: child,
         ),
         child: notification == null

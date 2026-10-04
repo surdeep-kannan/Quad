@@ -42,19 +42,22 @@
 | Database schema, security rules, feeds, search, rankings | **Done and live** in your Supabase project |
 | Demo data (6 students, 7 communities, posts, events, chats, reels) | **Done and live** |
 | Flutter app, all screens in the spec's MVP | **Done**: compiles with 0 errors and 0 warnings |
-| Web build, served on your Wi-Fi for phone testing | **Done**: `http://192.168.0.5:8080` while the server runs |
-| Automated checks | 83 database checks pass; headless-browser screenshots of every main screen |
+| Web build, served on your Wi-Fi for phone testing | **Done**: `http://<PC Wi-Fi IP>:8080` while the server runs |
+| Community roles and permissions (custom roles, ranks, 10 permissions) | **Done and live** (section 4, item 15) |
+| Private profiles and anonymous posting | **Done and live** (section 4, item 16) |
+| Automated checks | 112 database checks pass; headless-browser screenshots of every main screen |
 | Voice/video calls | **Built, not yet tested between two real devices** |
-| Android APK / iOS build | **Not built**: this PC has no Android SDK or Xcode |
+| Android APK | **Built and installed** on a Realme phone over USB (section 2D) |
+| iOS build | **Not built**: needs a Mac with Xcode |
 | Push notifications (phone lock screen) | **Not built**: in-app realtime notifications only |
 
 Size of the work:
 
 | Part | Files | Lines |
 |---|---|---|
-| Flutter app (`app/lib`) | 99 Dart files | about 17,700 |
-| Database (`supabase/migrations` + `seed.sql`) | 12 SQL files | about 4,200 |
-| Tools (`tools/`) | 4 scripts | about 1,000 |
+| Flutter app (`app/lib`) | 100 Dart files | about 19,300 |
+| Database (`supabase/migrations` + `seed.sql`) | 15 SQL files | about 5,800 |
+| Tools (`tools/`) | 4 scripts | about 1,300 |
 
 ---
 
@@ -64,8 +67,8 @@ Size of the work:
 
 1. Keep your PC and phone on the **same Wi-Fi**.
 2. The web build is served from `app/build/web` by a small Python server on port 8080.
-3. On your phone, open **`http://192.168.0.5:8080`** in Chrome or Safari.
-   - If the IP changed, run `ipconfig` on the PC and use the Wi-Fi adapter's IPv4 address.
+3. On your phone, open **`http://<PC Wi-Fi IP>:8080`** in Chrome or Safari (on 4 Oct 2026 it was `http://192.168.0.3:8080`).
+   - The IP can change: run `ipconfig` on the PC and use the **WiFi** adapter's IPv4 address.
    - If it doesn't load, allow Python through Windows Firewall (private networks).
 4. Sign up with your own email, or sign in with a demo account (section 3).
 5. Tip: in Chrome's menu choose **Add to Home screen** to get a full-screen, app-like view.
@@ -91,30 +94,47 @@ cd app
 flutter run -d chrome --dart-define-from-file=env/dev.json
 ```
 
-### D. Run natively on an Android phone (needs Android Studio)
+### D. Run natively on an Android phone
 
-1. Install Android Studio. It installs the Android SDK.
-2. Run `flutter doctor` until the Android line is green.
-3. Enable USB debugging on the phone, plug it in, then:
+Android Studio, the SDK and NDK 28 are installed on this PC. Enable USB
+debugging on the phone, plug it in (accept the "Allow USB debugging" prompt),
+then:
 
 ```powershell
 cd app
-flutter run --dart-define-from-file=env/dev.json
-# or build an installable APK:
-flutter build apk --release --dart-define-from-file=env/dev.json
-# the APK lands in app/build/app/outputs/flutter-apk/app-release.apk
+flutter devices                      # the phone should be listed
+flutter build apk --release --target-platform android-arm64 --dart-define-from-file=env/dev.json
+flutter install -d <device id> --release
+# the APK is app/build/app/outputs/flutter-apk/app-release.apk (you can also copy it to the phone and open it)
 ```
+
+If the build fails with a CMake "lock" error on the `jni` plugin, close Android
+Studio, run `android\gradlew --stop`, and build again.
 
 > **Why not Expo?** `lookme.md` says both "I will use Expo" and "do in Flutter".
 > Expo only runs React Native apps, so I followed "do in Flutter". The Wi-Fi web
 > link (A) is the Flutter equivalent of scanning an Expo QR code.
 
-### E. Email confirmation
+### E. Email confirmation (why sign-up "didn't work")
 
-New Supabase projects require email confirmation by default. After signing up
-the app shows "Check your inbox". Click the link, return to the app and sign in.
-For faster testing, turn it off in the Supabase dashboard: **Authentication →
-Sign In / Providers → Email → Confirm email**.
+Your Supabase project has **Confirm email** turned on (checked through the
+public `/auth/v1/settings` endpoint: `mailer_autoconfirm = false`). So:
+
+1. After signing up, no session is created until the email link is clicked.
+2. The link in the email redirects to the project's Site URL (by default
+   `http://localhost:3000`), which shows an error page on a phone. **That's
+   fine**: the click already confirmed the account.
+3. Back in the app, tap **"I've confirmed, continue"** (it signs in with the
+   details you just typed), or sign in normally.
+4. Signing in before confirming now shows "Your email isn't confirmed yet"
+   with a **Resend confirmation email** button, instead of a vague error.
+5. Supabase's built-in mailer only sends a few emails per hour. If you hit the
+   limit the app says so; wait, or set up custom SMTP in the dashboard.
+
+For faster testing, turn confirmation off: **Supabase Dashboard →
+Authentication → Sign In / Providers → Email → Confirm email**. New accounts
+can then sign in immediately. (This needs a dashboard login; the project keys
+can't change it.)
 
 ---
 
@@ -125,7 +145,7 @@ Created by `tools/seed-demo.mjs`. They share one password: **`QuadDemo@2026`**
 | Email | Who | Notes |
 |---|---|---|
 | `aarav@demo.quadapp.dev` | Aarav Mehta, IIT Madras, CS, 3rd year | Owns Coding Club and IIT Madras communities; verified |
-| `diya@demo.quadapp.dev` | Diya Nair, IIT Madras, Design | Owns Shutterbugs, moderator of Coding Club |
+| `diya@demo.quadapp.dev` | Diya Nair, IIT Madras, Design | Owns Shutterbugs, has the Moderator role in Coding Club |
 | `kabir@demo.quadapp.dev` | Kabir Singh, NIT Trichy | Owns Placement Prep; posted the poll |
 | `meera@demo.quadapp.dev` | Meera Iyer, IIT Madras, Data Science | Owns ML & AI |
 | `rohan@demo.quadapp.dev` | Rohan Das, BITS Pilani, fresher | Owns Campus Football, posted reels |
@@ -137,7 +157,8 @@ Good things to try:
 - Vote in Kabir's poll, react with a long-press on the heart, comment and reply.
 - Register for **Paper reading night** (capacity 60) and see "Going" and the online link.
 - Open **Communities → Colleges & rankings** to see scores and "How rankings work".
-- As Aarav, open Coding Club → **Manage** to see the moderator tools.
+- As Aarav, open Coding Club → **Manage** → **Roles** to create roles, then give them out from **Members**.
+- Turn on **Settings → Private profile**, then comment on a post: other accounts see a random `anonymous_…` name.
 
 Re-running `npm run db:seed-demo` deletes and recreates all demo data. Real accounts are never touched.
 
@@ -170,11 +191,11 @@ Legend: ✅ done · 🟡 partly done or untested · ❌ not done
 | Categories (college, department, tech, club, hackathon, sports, career, hobby, event, other) | ✅ | filter chips on Discover |
 | Public and private (join requests) | ✅ | private communities hide posts, rooms and events until approved |
 | Own feed | ✅ | Hot / New / Top sorting, pinned posts first |
-| Members | ✅ | members list with roles; moderators can promote, remove and ban |
+| Members | ✅ | members list with role chips; staff assign roles, remove and ban (item 15) |
 | Discussions | ✅ | threaded comments, up to 6 levels |
-| Announcements | ✅ | moderator-only post type; notifies every member |
-| Events | ✅ | Community → Events tab; moderators create community events |
-| Rooms | ✅ | Community → Rooms tab; every community starts with #general |
+| Announcements | ✅ | needs the "Post announcements" permission; notifies every member |
+| Events | ✅ | Community → Events tab; needs the "Manage events" permission |
+| Rooms | ✅ | Community → Rooms tab; every community starts with #general; long-press a room to edit, lock or delete it ("Manage rooms") |
 
 ### 3. Community posts
 
@@ -308,7 +329,7 @@ Legend: ✅ done · 🟡 partly done or untested · ❌ not done
 | Report system (posts, comments, messages, events, users, communities) | ✅ with reasons and details; reports keep a snapshot of the content |
 | Block users | ✅ hides both ways, removes follows, blocks DMs, comments and calls |
 | Community moderation (queue with remove/dismiss, join requests, bans) | ✅ Community → Manage |
-| Admin roles | ✅ community owner/admin/moderator plus platform admin (`profiles.role = 'admin'`) |
+| Admin roles | ✅ community owner plus custom roles with permissions (item 15), and platform admin (`profiles.role = 'admin'`) |
 | Content moderation (remove/restore, pin, lock comments) | ✅ |
 | Spam detection | ✅ rate limits, duplicate-post check, link-spam check |
 | Auto-hide | ✅ posts hidden after 5 reports until reviewed |
@@ -325,6 +346,68 @@ Legend: ✅ done · 🟡 partly done or untested · ❌ not done
 | Mobile-first, modern, not "AI slop" | ✅ custom design system (section 14) |
 | Architecture designed to scale | ✅ indexes, security rules, counters maintained by triggers, paginated lists; scale notes in section 18 |
 
+### 15. Community roles and permissions (added after the first build)
+
+Works like Discord roles. Every community has an **owner** (the creator) plus any
+number of **custom roles**. New communities start with two roles: **Admin**
+(every permission) and **Moderator** (moderate posts and room chat, manage
+members, review reports, post announcements). Existing admins and moderators
+were moved onto these roles automatically.
+
+| Permission | What it allows |
+|---|---|
+| Edit community (`manage_community`) | Name, description, rules, privacy |
+| Manage roles (`manage_roles`) | Create, edit, reorder, delete and give out roles ranked below your own |
+| Manage rooms (`manage_rooms`) | Create, rename, change topic/type, lock/unlock and delete rooms |
+| Manage members (`manage_members`) | Approve join requests, remove members |
+| Ban members (`ban_members`) | Ban and lift bans |
+| Moderate posts (`manage_posts`) | Remove posts and comments, pin, turn off comments |
+| Moderate room chat (`manage_messages`) | Delete room messages, post in locked rooms |
+| Post announcements (`post_announcements`) | The announcement post type, which notifies every member |
+| Manage events (`manage_events`) | Host community events and manage their guest lists |
+| Review reports (`view_reports`) | See and resolve the community's report queue |
+
+Rules (enforced in the database, so a modified app can't get around them):
+
+- **Ranks.** Roles have a position; higher outranks lower. Your rank is your top role's position (the owner outranks everyone). You can only manage people and roles ranked **below** you, so a moderator can't ban an admin or edit the Admin role.
+- You can only give a role permissions **you have yourself**.
+- Nobody can change their **own** roles.
+- Banning someone removes all their roles.
+- People who can manage members get the join-request notifications. People get a notification when they're given a role.
+
+Where it is in the app:
+
+| Screen | What you can do |
+|---|---|
+| Community → **Manage** | Tabs appear only if your roles allow them: Reports, Requests, Members, **Roles**, Banned, Details |
+| Manage → **Roles** | Create a role (name, colour, permission switches with explanations), tap a role to edit, move up/down or delete. Locked roles (at or above you) show a lock |
+| Members list / Manage → Members | Role chips next to names (crown for the owner). Tap someone below you: **Edit roles** (tick boxes), **Remove**, **Ban** |
+| Manage → **Banned** | Tap to lift a ban |
+| Community → Rooms | **Create a room**; long-press a room to edit, lock or delete it |
+
+### 16. Private profiles and anonymous posting (added after the first build)
+
+**Settings → Privacy & safety → Private profile.**
+
+| | Public profile (default) | Private profile |
+|---|---|---|
+| Who sees your profile details, follower counts, posts on your profile, achievements and events | Everyone | Only people **you follow** (and you) |
+| Others see | Everything | Your name and photo with "This profile is private" |
+| Community posts | Your name; optional **Post anonymously** switch | **Always anonymous** |
+| Comments (on any post) | Your name; tap your avatar in the comment box to switch to anonymous | **Always anonymous** |
+| Room messages | Your name; the detective-hat button next to the message box switches to anonymous | **Always anonymous** |
+| Likes/reactions on posts | Visible in "who reacted" | Hidden from the list; notifications say "Someone" |
+| Shown as online | Yes | No |
+
+How anonymity works:
+
+- Each anonymous post, comment or room message gets a **fresh random name** such as `anonymous_quiet_otter_421`, so separate messages can't be linked to each other.
+- The real author is **never sent to other people's apps**: the author column is unreadable to students, room messages are stored with no sender (the link lives in a separate table only the author can read), and notifications carry only the alias.
+- You still see your own anonymous content as yours: you can edit or delete it, your anonymous comments are labelled "(you)", and your anonymous room messages show on your side of the chat.
+- Reports on anonymous content reach moderators without the author's name.
+- Profile posts, announcements and event posts are never anonymous.
+- Rate limits and spam checks still apply to anonymous posting.
+
 ---
 
 ## 5. What is NOT done yet
@@ -333,7 +416,7 @@ In priority order:
 
 1. **Test calls on two real devices.** The WebRTC code is complete but has only been compiled, not run in a live two-person call.
 2. **TURN server for calls.** Direct calls fail on some mobile and college networks. Add a TURN service (Twilio, Metered or self-hosted coturn) and put it in `app/env/dev.json` as `TURN_URL`, `TURN_USERNAME` and `TURN_CREDENTIAL`. The app already reads these.
-3. **Native app builds.** Install Android Studio for Android; iOS needs a Mac with Xcode. The native permission entries (camera, microphone, photos) still need to be added to `AndroidManifest.xml` and `Info.plist` before the first native build.
+3. **iOS build.** Needs a Mac with Xcode (the `Info.plist` permission texts are already in place). Android is done.
 4. **Push notifications** (Firebase Cloud Messaging, plus a Supabase Edge Function that sends a push when a notification row is inserted).
 5. **Reel processing.** Videos play as uploaded. Later: compression, HLS streaming and auto-thumbnails (for example with Mux or Cloudflare Stream).
 6. **Deep links.** Share links use `quad://…` on phones and `…/#/post/<id>` on web. Needs a real domain plus Android App Links and iOS Universal Links.
@@ -341,12 +424,12 @@ In priority order:
    - "Communities joined" on other people's profiles.
    - "Related discussions" list on the event page.
    - Room invite button (backend `invite_to_room` exists).
-   - Lock/unlock toggle for rooms (backend column `is_locked` exists).
+   - Reordering rooms (backend column `position` exists).
    - Editing a post after publishing (backend allows it; only comments have an Edit button).
    - Group chat photo and rename (backend allows it; no UI yet).
 8. **Platform admin screen** for reviewing reports outside communities (profile posts, DMs, users).
 9. **College email verification** to grant the verified badge automatically.
-10. **Automated app tests.** The database has 83 tests; the Flutter app has no unit or widget tests yet (the template test was removed because it tested the counter demo).
+10. **Automated app tests.** The database has 112 tests; the Flutter app has no unit or widget tests yet (the template test was removed because it tested the counter demo).
 11. **Theme choice is not remembered** between app launches (it resets to "Match my phone").
 12. **App name, logo and icons.** "Quad" is a placeholder name. The launcher icon and web favicon are still Flutter's defaults.
 
@@ -457,11 +540,11 @@ Line counts are approximate.
 | File | Lines | What it contains |
 |---|---|---|
 | `core/data/json.dart` | 21 | Safe readers for database rows (`dateOf`, `intOf`, `stringsOf`, `jsonListOf`…). |
-| `core/data/refs.dart` | 100 | Small shared models: `UserRef` (a person inside a post or chat), `CommunityRef`, `CollegeRef`, `MediaItem` (image/video). |
+| `core/data/refs.dart` | 123 | Small shared models: `UserRef` (a person inside a post or chat; `isAnonymous` when it's an alias), `CommunityRef`, `CollegeRef`, `MediaItem` (image/video). |
 | `core/data/supabase_providers.dart` | 16 | Providers for the Supabase client, the auth-state stream and the current user id. |
 | `core/data/paged.dart` | 61 | `Paged<T>` and `PagedNotifier<T>`: the base for every infinite list (load first page, load more, refresh, drop duplicates). |
 | `core/data/media.dart` | 114 | `MediaPicker` (photos, camera, video, any file; works on web too) and `StorageRepository` (uploads to `avatars`, `media`, `chat`; cached signed URLs for chat files). |
-| `core/data/realtime.dart` | 108 | `InboxRealtime`: one private channel per student carrying chat-list changes, new notifications and calls. `OnlineUsers`: app-wide presence for green online dots. |
+| `core/data/realtime.dart` | 154 | `InboxRealtime`: one private channel per student carrying chat-list changes, new notifications and calls. `OnlineUsers`: app-wide presence for green online dots (`setVisible(false)` keeps private profiles hidden). |
 
 ### 9.4 core/router
 
@@ -485,7 +568,7 @@ Routes: `/splash /welcome /sign-in /sign-up /forgot-password /onboarding`, tabs 
 | `core/utils/context_x.dart` | 30 | `context.colors`, `context.text`, `context.isDark`; string helpers such as `initials` (emoji-safe) and `humanized`. |
 | `core/utils/formatters.dart` | 104 | Human times: "4m", "Yesterday", "Active 5m ago", "Sat, 28 Sep · 6:30 PM", "In 3 days"; counts ("1.2k"); "12 members"; file sizes. |
 | `core/utils/validators.dart` | 41 | Form checks: email, password (8+), name, username, required, URL. |
-| `core/utils/errors.dart` | 40 | `friendlyError`: turns Supabase/network errors into sentences a student understands. |
+| `core/utils/errors.dart` | 49 | `friendlyError`: turns Supabase/network errors into sentences a student understands (including the email rate limit). `isEmailNotConfirmed` for the sign-in screen. |
 | `core/utils/debouncer.dart` | 24 | `Debouncer` (search as you type) and `Throttler` (typing indicator). |
 
 ### 9.7 core/widgets (the UI kit)
@@ -496,7 +579,7 @@ Routes: `/splash /welcome /sign-in /sign-up /forgot-password /onboarding`, tabs 
 | `pressable.dart` | 113 | `Pressable` (shrinks slightly when pressed, optional haptics) and `IconTap` (round icon button with an optional badge). |
 | `app_button.dart` | 115 | `AppButton`: primary/accent/secondary/outline/ghost/danger × small/medium/large, loading spinner, icons. `LinkButton`. |
 | `app_text_field.dart` | 174 | `AppTextField` (label above the field, password show/hide, counter) and `SearchField` (rounded search box). |
-| `avatars.dart` | 162 | `UserAvatar` (photo or coloured initials, online dot), `CommunityAvatar` (rounded square), `AvatarStack` (overlapping "who's going"). |
+| `avatars.dart` | 216 | `UserAvatar` (photo or coloured initials, online dot), `AnonymousAvatar` (detective hat, colour from the alias), `AuthorAvatar` (picks one of the two), `CommunityAvatar` (rounded square), `AvatarStack` (overlapping "who's going"). |
 | `app_image.dart` | 48 | Cached network image with a neutral placeholder and fade-in. |
 | `skeleton.dart` | 135 | Pulsing loading placeholders shaped like posts and list rows. |
 | `states.dart` | 89 | `EmptyState` (icon, title, message, action), `ErrorState` (friendly error + Try again), `CenteredLoader`. Re-exports skeletons. |
@@ -514,7 +597,7 @@ Routes: `/splash /welcome /sign-in /sign-up /forgot-password /onboarding`, tabs 
 | `auth/data/auth_repository.dart` | 32 | Sign in, sign up (stores full name), resend confirmation, password reset, sign out. |
 | `auth/ui/brand.dart` | 44 | The "quad•" wordmark. |
 | `auth/ui/welcome_screen.dart` | 277 | First screen: animated collage built from real UI pieces (event ticket, community card, chat bubbles), headline, Create account / Sign in. |
-| `auth/ui/auth_screens.dart` | 389 | `SplashScreen` (loading/retry), `SignInScreen`, `SignUpScreen` (with a "Check your inbox" state when email confirmation is on), `ForgotPasswordScreen`. |
+| `auth/ui/auth_screens.dart` | 480 | `SplashScreen` (loading/retry), `SignInScreen` (explains an unconfirmed email and offers "Resend confirmation email"), `SignUpScreen` (with a "Check your inbox" state when email confirmation is on: "I've confirmed, continue" signs you in, plus resend), `ForgotPasswordScreen`. |
 
 ### 9.9 features/onboarding
 
@@ -538,27 +621,28 @@ Routes: `/splash /welcome /sign-in /sign-up /forgot-password /onboarding`, tabs 
 
 | File | Lines | What it contains |
 |---|---|---|
-| `posts/data/post.dart` | 319 | Models: `PostType` (9 types), `Reaction` (like, fire, haha, idea, clap), `Post`, `PollOption`, `EventSummary`, `PostAuthor`, `Comment`. |
+| `posts/data/post.dart` | 371 | Models: `PostType` (9 types), `Reaction` (like, fire, haha, idea, clap), `Post`, `PollOption`, `EventSummary`, `PostAuthor`, `Comment` (posts and comments carry `isAnonymous` and `isMine`). |
 | `posts/data/post_repository.dart` | 177 | Feeds (home, community, reels, by author, saved), create post (one call, including poll options), edit, delete, react, save, follow, vote, record view and share, comments (list, add, edit, delete, like). `FeedMode` enum. |
 | `posts/providers.dart` | 318 | `PostPatch` + `PostActions`: instant likes, saves, follows, votes and deletes that stay in sync across every list and roll back on error. Providers for home feeds, community feeds, user posts, saved posts, reels feed, single post and comments. |
 | `posts/ui/post_card.dart` | 916 | The post card (header, type badge, title, rich body, photo grid with full-screen viewer, poll with animated results, event attachment, tags), action bar (reaction long-press picker, comments, share, save), share sheet (send to a chat, copy link, share outside), the "…" menu (follow discussion, save, copy link, pin/lock/remove for moderators, delete, report), `PersonRow`. |
-| `posts/ui/post_detail_screen.dart` | 472 | A post with its threaded comments (thread lines, Top/Newest sort), comment likes, reply, edit, delete, moderator remove, report, and a composer with "Replying to…". Shows "Comments are turned off" when locked. |
-| `posts/ui/composer_screen.dart` | 451 | New post: choose where (your profile or a community), type (post, photo, question, poll, achievement, announcement for moderators, video), title/body, up to 4 photos or 1 video, 2–6 poll options + length, up to 3 topics. |
+| `posts/ui/post_detail_screen.dart` | 573 | A post with its threaded comments (thread lines, Top/Newest sort), comment likes, reply, edit, delete, moderator remove, report, and a composer with "Replying to…". Tap your avatar in the comment box to comment anonymously (always on for private profiles). Anonymous commenters show an alias and a detective-hat avatar. Shows "Comments are turned off" when locked. |
+| `posts/ui/composer_screen.dart` | 590 | New post: choose where (your profile or a community), type (post, photo, question, poll, achievement, announcement for people with that permission, video), title/body, up to 4 photos or 1 video, 2–6 poll options + length, up to 3 topics, and a **Post anonymously** switch for community posts. |
 | `posts/ui/saved_screen.dart` | 43 | Your saved posts. |
 
 ### 9.13 features/communities
 
 | File | Lines | What it contains |
 |---|---|---|
-| `communities/data/community.dart` | 236 | Models: `Community` (with your role/status and helpers like `isMod`), `CommunityRule`, `CommunityMember`, `Room`; category and room-kind labels and icons. |
-| `communities/data/community_repository.dart` | 150 | Discover, mine, by college, suggested, by slug/id, create, update, join/leave, members, set role/status, remove member, rooms (list, create, update, delete), search. |
-| `communities/providers.dart` | 70 | My communities, suggestions, discover (paged by category), a community page with join/leave, members, rooms, room. |
+| `communities/data/community.dart` | 350 | Models: `Community` (your status, permissions and rank, with `can(permission)`), `CommunityRule`, `CommunityMember` (with their roles and rank), `CommunityRole`, `CommunityPermissions` (the 10 keys with labels and explanations), `Room`; category and room-kind labels and icons. |
+| `communities/data/community_repository.dart` | 210 | Discover, mine, by college, suggested, by slug/id, create, update, join/leave, members (with roles, highest rank first), roles (list, create, update, delete), set a member's roles, approve/ban/unban, remove member, rooms (list, create, update, delete), search. |
+| `communities/providers.dart` | 93 | My communities, suggestions, discover (paged by category), a community page with join/leave, members, roles, rooms, room. |
 | `communities/ui/communities_screen.dart` | 215 | Communities tab: Communities / Colleges & rankings switch, search, "Your communities" row, category filters, discover list. |
 | `communities/ui/community_tiles.dart` | 175 | `JoinButton` (Join / Request / Requested / Joined), `CommunityCard` (carousel card), `CommunityRow` (list row). |
-| `communities/ui/community_screen.dart` | 637 | Community page: coloured banner, icon, name, tags, Join/Manage; sections Posts (Hot/New/Top), Rooms (with "Create a room" sheet for moderators), Events, About (description, numbered rules, tags). Private communities show a locked state. |
+| `communities/ui/community_screen.dart` | 804 | Community page: coloured banner, icon, name, tags, Join/Manage; sections Posts (Hot/New/Top), Rooms (create, and long-press to edit, lock or delete, for people who can manage rooms), Events, About (description, numbered rules, tags). Private communities show a locked state. |
 | `communities/ui/create_community_screen.dart` | 222 | Create: icon upload, colour, name (auto link slug), tagline, description, category, topics, private switch, link to your college. |
-| `communities/ui/members_screen.dart` | 142 | Members list (staff first). Moderators tap a member to promote, demote, remove or ban, or to approve/decline a request. |
-| `communities/ui/manage_community_screen.dart` | 218 | Moderator tools: Reports queue (dismiss / remove content), join Requests, Details editor (admins only). |
+| `communities/ui/members_screen.dart` | 197 | Members list (highest rank first) with role chips. Tapping someone ranked below you offers what your permissions allow: edit roles, remove, ban; also approve/decline requests and lift bans. |
+| `communities/ui/manage_community_screen.dart` | 265 | Staff tools, each tab shown only with the right permission: Reports queue, join Requests, Members, Roles, Banned, Details editor. |
+| `communities/ui/roles.dart` | 527 | `RoleChip` and `MemberRoleChips`; the Roles tab (create, edit, move up/down, delete); the role editor sheet (name, colour, permission switches, only the permissions you hold can be granted); the member roles sheet (tick boxes, roles at or above you are locked). |
 
 ### 9.14 features/events
 
@@ -585,11 +669,11 @@ Routes: `/splash /welcome /sign-in /sign-up /forgot-password /onboarding`, tabs 
 
 | File | Lines | What it contains |
 |---|---|---|
-| `chat/data/chat_models.dart` | 281 | Models: `Conversation` (chat-list row), `ConversationMember`, `Message` (with send state), `Attachment`, `RoomRef`, `MessageSearchHit`, `Call`. |
+| `chat/data/chat_models.dart` | 327 | Models: `Conversation` (chat-list row), `ConversationMember`, `Message` (with send state, and `isAnonymous`/`anonName` for anonymous room messages), `Attachment`, `RoomRef`, `MessageSearchHit`, `Call`. |
 | `chat/data/chat_repository.dart` | 128 | Chat list, conversation info, members, messages (paged back), send, edit, unsend, react, mark read, mute, start direct chat, create group, add/remove members, rename, search, start and update calls. |
-| `chat/providers.dart` | 343 | `ChatList` (live chat list; unread counts), `unreadChatsProvider` (tab badge), `ConversationController` (history, live new/edited messages, typing indicator, optimistic sending with retry, photo/file upload, reactions, edit, unsend), message search. |
+| `chat/providers.dart` | 408 | `ChatList` (live chat list; unread counts), `unreadChatsProvider` (tab badge), `ConversationController` (history, live new/edited messages, typing indicator (skipped while anonymous), optimistic sending with retry, photo/file upload, reactions, edit, unsend; remembers which anonymous messages are yours), message search. |
 | `chat/ui/chat_list_screen.dart` | 254 | Chats tab: search, filters (All, Unread, Direct, Groups, Rooms), rows with avatar/online dot, preview, time, unread badge, muted icon; `TypingDots`. |
-| `chat/ui/conversation_screen.dart` | 958 | The chat screen (also used by rooms through `RoomScreen`): header with online/typing status and call buttons; message bubbles grouped by sender and time, day separators, system lines, reply previews, photos, files, shared post/event cards, reactions, sent/sending/failed ticks, swipe-to-reply, long-press menu; composer with attach, reply/edit bar. |
+| `chat/ui/conversation_screen.dart` | 1172 | The chat screen (also used by rooms through `RoomScreen`): header with online/typing status and call buttons; message bubbles grouped by sender and time, day separators, system lines, reply previews, photos, files, shared post/event cards, reactions, sent/sending/failed ticks, swipe-to-reply, long-press menu; composer with attach, reply/edit bar, and in rooms an anonymous toggle (locked on for private profiles). Anonymous messages show their alias. |
 | `chat/ui/new_chat_screen.dart` | 190 | Start a chat: search people (suggestions when empty); "New group" mode with name and selected people. |
 | `chat/ui/conversation_info_screen.dart` | 144 | Chat details: mute, view profile, block (direct chats); members, remove people and leave (groups). |
 | `chat/ui/message_search_screen.dart` | 71 | Search all your messages. |
@@ -606,10 +690,10 @@ Routes: `/splash /welcome /sign-in /sign-up /forgot-password /onboarding`, tabs 
 
 | File | Lines | What it contains |
 |---|---|---|
-| `profile/data/profile.dart` | 199 | `Profile` model (with `academicLine`), `Achievement` (+ categories), `Interests` (the 25 interest keys and labels). |
+| `profile/data/profile.dart` | 225 | `Profile` model (with `academicLine`, `isPrivate`, and `canSee` for whether you may see their details), `Achievement` (+ categories), `Interests` (the 25 interest keys and labels). |
 | `profile/data/profile_repository.dart` | 104 | Profile by id/username, update, username availability, follow/unfollow, followers/following, suggestions, achievements, last seen, block/unblock/list blocked. |
 | `profile/providers.dart` | 79 | `myProfileProvider` (your profile; drives routing), profile by username, achievements, suggestions, followers/following, blocked, instant follow toggles, the 1-minute "last seen" heartbeat. |
-| `profile/ui/profile_screen.dart` | 513 | Profile page (yours or someone else's): avatar, counts, name + verified, college line, bio, Edit/Share or Follow/Message; tabs Posts, Reels (grid), About (skills, interests, achievements with add/delete, events, joined date); block/report menu. |
+| `profile/ui/profile_screen.dart` | 657 | Profile page (yours or someone else's): avatar, counts, name + verified (+ lock if private), college line, bio, Edit/Share or Follow/Message; tabs Posts, Reels (grid), About (skills, interests, achievements with add/delete, events, joined date); block/report menu. Private profiles you can't see show "This profile is private" instead of the tabs. |
 | `profile/ui/edit_profile_screen.dart` | 152 | Edit photo, name, username (checks availability), bio, department, year, skills, interests. |
 | `profile/ui/follow_list_screen.dart` | 72 | Followers/Following lists and the reusable `FollowButton`. |
 
@@ -631,7 +715,7 @@ Routes: `/splash /welcome /sign-in /sign-up /forgot-password /onboarding`, tabs 
 |---|---|---|
 | `notifications/data/notification_repository.dart` | 108 | `AppNotification` model; list, by id, unread count, mark all read, mark one read. |
 | `notifications/providers.dart` | 64 | Live unread count (bell badge), the in-app banner, the notification list (new ones slide in live), mark all read. |
-| `notifications/ui/notification_tile.dart` | 108 | One notification: avatar + small type icon, a sentence for each of the 18 types, time, unread dot; tapping opens the right screen. |
+| `notifications/ui/notification_tile.dart` | 157 | One notification: avatar + small type icon, a sentence for each of the 18 types (anonymous actors show their alias or "Someone"), time, unread dot; tapping opens the right screen. |
 | `notifications/ui/notifications_screen.dart` | 45 | Notifications page with "Mark all read". |
 
 ### 9.21 features/search
@@ -653,7 +737,7 @@ Routes: `/splash /welcome /sign-in /sign-up /forgot-password /onboarding`, tabs 
 | File | Lines | What it contains |
 |---|---|---|
 | `settings/theme_mode.dart` | 9 | Light / dark / match phone. |
-| `settings/ui/settings_screen.dart` | 118 | Settings (edit profile, saved, appearance, blocked people, guidelines, college rankings, sign out) and `BlockedUsersScreen`. |
+| `settings/ui/settings_screen.dart` | 178 | Settings (edit profile, saved, appearance, **Private profile** switch, blocked people, guidelines, college rankings, sign out) and `BlockedUsersScreen`. |
 
 ### 9.24 Other app files
 
@@ -685,8 +769,11 @@ Each migration is applied once, in order, and recorded in `supabase_migrations.s
 | `migrations/20260928000900_views_feeds_search_rankings.sql` | Views with the viewer's own state: `profile_summaries`, `community_details`, `post_details`, `comment_details`, `event_details`, `room_details`, `notification_details`, `report_details`, `college_rankings`. Feeds: `home_feed` (for_you / following / campus), `community_feed` (hot/new/top), `reels_feed`. Suggestions: `suggested_communities`, `suggested_people`. Search: `search_profiles`, `search_communities`, `search_events`, `search_posts`, `search_colleges`, `search_rooms`. Rankings: tables `ranking_pillars` and `college_stats`, `refresh_college_stats()`, `college_leaderboard()`. |
 | `migrations/20260928001000_storage.sql` | Buckets `avatars` (public, 5 MB, images), `media` (public, 50 MB, images and video), `chat` (private, 25 MB) and their upload/read policies. |
 | `migrations/20260928001100_realtime_jobs_grants.sql` | Adds tables to realtime; security rules for private realtime channels (`online`, `chat:<id>`, `call:<id>`, `voice:<room>`, `user:<id>`); schedules pg_cron jobs; blocks signed-out access to all functions. |
+| `migrations/20261004000100_community_roles.sql` | Custom community roles. Tables `community_roles` (name, colour, position, permissions) and `community_member_roles`. Helpers `has_permission`, `my_permissions`, `member_rank`, `my_rank`; every older "is moderator/admin" check now asks for a specific permission. Default Admin and Moderator roles for every community (existing staff moved onto them). RPCs `create_community_role`, `update_community_role`, `delete_community_role`, `set_member_roles`; `set_member_status` and `remove_member` now check permissions and rank (`set_member_role` removed). `community_details` gains `my_permissions` and `my_rank`. |
+| `migrations/20261004000200_private_profiles_anonymity.sql` | `profiles.is_private`; `is_anonymous` and `anon_name` on posts, comments and messages; table `message_authors`. Hides the author columns from students, adds alias triggers (fresh `anonymous_<adjective>_<animal>_<number>` each time), `can_see_profile` (private profiles visible to people they follow), privacy rules for posts, follows, achievements, reactions and guest lists, and rebuilt `profile_summaries`, `post_details`, `comment_details`, `report_details` and notification triggers that never leak the real author. |
+| `migrations/20261004000300_create_post_anonymous.sql` | `create_post` gains `p_is_anonymous`. |
 | `seed.sql` | 50 Indian colleges (IITs, NITs, IIITs, BITS, VIT, SRM, Anna University, DU, JNU…) with city, state, type and founding year. Safe to re-run. |
-| `setup.sql` | All 11 migrations plus the seed in one file, for pasting into the Supabase SQL editor on a brand-new project. |
+| `setup.sql` | All 14 migrations plus the seed in one file, for pasting into the Supabase SQL editor on a brand-new project. |
 
 ---
 
@@ -695,7 +782,7 @@ Each migration is applied once, in order, and recorded in `supabase_migrations.s
 | File | What it contains |
 |---|---|
 | `tools/package.json` | Scripts `db:check`, `db:migrate`, `db:seed-demo`; dependencies `@electric-sql/pglite`, `pg`, `@supabase/supabase-js`. |
-| `tools/db-check.mjs` | Runs every migration in an **in-memory Postgres** (PGlite) with stand-ins for Supabase's auth, storage and realtime, then 83 checks acting as real students (RLS isolation, private communities, waitlists, hidden meeting links, chat unread counts, blocking, reports, rate limits, rankings…). Never touches your real database. |
+| `tools/db-check.mjs` | Runs every migration in an **in-memory Postgres** (PGlite) with stand-ins for Supabase's auth, storage and realtime, then 112 checks acting as real students (RLS isolation, private communities, waitlists, hidden meeting links, chat unread counts, blocking, reports, rate limits, rankings, role permissions and ranks, anonymous posts/comments/room messages, private profiles…). Never touches your real database. |
 | `tools/db.mjs` | Connects to your Supabase Postgres from `.env` (direct connection, or finds the pooler region automatically). |
 | `tools/db-migrate.mjs` | Applies new migrations in order (each once), runs `seed.sql`, and tells the API to reload the schema. |
 | `tools/seed-demo.mjs` | Deletes and recreates the demo data (6 students, 7 communities, 5 extra rooms, 6 events, 16 posts incl. poll/photos/reels, comments, reactions, achievements, 2 DMs, 1 group, room messages). |
@@ -706,21 +793,23 @@ Each migration is applied once, in order, and recorded in `supabase_migrations.s
 
 ## 12. Database reference
 
-### 12.1 Tables (29)
+### 12.1 Tables (32)
 
 | Group | Tables |
 |---|---|
 | People | `profiles`, `follows`, `blocks`, `achievements`, `colleges`, `college_stats`, `ranking_pillars` |
-| Communities | `communities`, `community_members`, `rooms` |
+| Communities | `communities`, `community_members`, `community_roles`, `community_member_roles`, `rooms` |
 | Content | `posts`, `poll_options`, `poll_votes`, `post_reactions`, `comments`, `comment_likes`, `saved_posts`, `post_follows` |
 | Events | `events`, `event_registrations`, `event_updates` |
-| Chat and calls | `conversations`, `conversation_members`, `messages`, `message_reactions`, `calls` |
+| Chat and calls | `conversations`, `conversation_members`, `messages`, `message_authors`, `message_reactions`, `calls` |
 | System | `notifications`, `reports`, `mod_actions` |
 
 ### 12.2 Security model (Row Level Security)
 
 - **Every table has RLS on.** Signed-out users see nothing and can't call any function.
-- **Profiles:** everyone signed in can see profiles, except people who blocked you. You can only edit your own name, username, photo, bio, college, department, year, skills, interests and last-seen.
+- **Profiles:** everyone signed in can see profiles, except people who blocked you. Private profiles show only name and photo to people they don't follow. You can only edit your own name, username, photo, bio, college, department, year, skills, interests, last-seen and privacy.
+- **Anonymity:** students can't read `posts.author_id` or `comments.author_id` at all; views return the author only when it isn't anonymous (or it's you). Anonymous room messages have no sender; the link is in `message_authors`, readable only by the author.
+- **Roles:** every staff action checks a specific permission plus rank (section 4, item 15).
 - **Communities:** names are discoverable; posts, rooms and member lists of private communities are members-only. Membership changes only through the join/leave/moderation functions.
 - **Posts and comments:** visible if the community is visible and neither person blocked the other. Removed posts are visible only to the author and moderators. Only authors edit; authors and moderators delete.
 - **Poll votes are secret:** you only see your own vote; totals are public.
@@ -828,9 +917,11 @@ The goal was an app that looks designed, not generated: strong type, one confide
 
 | Check | Result |
 |---|---|
-| `npm run db:check`: all migrations in an in-memory Postgres + 83 behaviour checks | **83 passed, 0 failed** |
-| Migrations applied to your Supabase project | 11/11 applied; 29 tables, 9 views, 3 buckets, 5 realtime tables, 2 cron jobs confirmed |
-| Demo login and key functions against your real project (Node script) | Login OK; feed, chat list and rankings return data |
+| `npm run db:check`: all migrations in an in-memory Postgres + 112 behaviour checks | **112 passed, 0 failed** |
+| Migrations applied to your Supabase project | 14/14 applied |
+| Demo login and key functions against your real project (Node script) | Login OK; feed, chat list and rankings return data. Roles: member lists with roles, role counts, create/update/delete role and the duplicate-name error all work through the real API |
+| Roles and anonymity screens in headless Chrome (as Aarav) | Manage tabs, Roles tab, role actions, members with Owner chip, member role picker, room hint, composer with all communities and the anonymous switch, Settings privacy switch; no console errors |
+| Bug found this way and fixed | The composer's "Post to" sheet listed no communities if opened before they had loaded (same fix in the event editor) |
 | `flutter analyze` | **0 errors, 0 warnings** (24 style hints) |
 | `flutter build web --release` | Builds successfully |
 | Headless Chrome at iPhone size (390×844), signed in as a demo student | Welcome, sign-in, Home, Communities, Events, Reels, Chat, Profile, Community page, Notifications and Colleges all load with real data and **no console errors** |
@@ -874,7 +965,8 @@ flutter pub get
 flutter analyze
 flutter run -d chrome --dart-define-from-file=env/dev.json          # hot reload on PC
 flutter build web --release --dart-define-from-file=env/dev.json --no-web-resources-cdn
-flutter build apk --release --dart-define-from-file=env/dev.json    # needs Android SDK
+flutter build apk --release --target-platform android-arm64 --dart-define-from-file=env/dev.json
+flutter install -d <device id> --release                             # phone on USB with USB debugging
 
 # --- Serve the web build to your phone (run inside app/build/web) ---
 python -m http.server 8080 --bind 0.0.0.0
@@ -888,17 +980,18 @@ Adding a database change: create `supabase/migrations/<timestamp>_<name>.sql` (e
 
 **This week**
 
-1. Test on your phone at `http://192.168.0.5:8080`: sign up, finish onboarding, post, join a community, register for an event, chat with a demo account in another browser.
+1. Turn off **Confirm email** in the Supabase dashboard while testing (section 2E), or set up custom SMTP.
 2. Rotate the Supabase secret key and DB password (section 6).
-3. Install Android Studio and run the app natively; add camera/microphone/photo permissions to `AndroidManifest.xml`.
-4. Try a voice and a video call between two devices; add a TURN server if they don't connect.
+3. Try roles with two accounts: as an owner create a role with only "Manage rooms", give it to someone, and check they can edit rooms but not ban people.
+4. Turn on Private profile on one account and check that its comments and room messages show up anonymously for another account.
+5. Try a voice and a video call between two devices; add a TURN server if they don't connect.
 
 **Next**
 
-5. Push notifications (FCM + an Edge Function triggered by `notifications` inserts).
-6. Fill the UI gaps from section 5 (room invites/lock, edit post, group photo/rename, related discussions, communities on profiles).
-7. App icon, splash screen and final name.
-8. Widget tests for key flows (sign up → onboarding → post).
+6. Push notifications (FCM + an Edge Function triggered by `notifications` inserts).
+7. Fill the UI gaps from section 5 (room invites and ordering, edit post, group photo/rename, related discussions, communities on profiles).
+8. App icon, splash screen and final name.
+9. Widget tests for key flows (sign up → onboarding → post).
 
 **When the user base grows**
 

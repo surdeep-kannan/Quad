@@ -104,12 +104,21 @@ class InboxRealtime {
 final onlineUsersProvider = NotifierProvider<OnlineUsers, Set<String>>(OnlineUsers.new);
 
 class OnlineUsers extends Notifier<Set<String>> {
+  RealtimeChannel? _channel;
+  bool _subscribed = false;
+
+  /// Off until [setVisible] is called, so private profiles never flash online.
+  bool _visible = false;
+
   @override
   Set<String> build() {
     final uid = ref.watch(currentUserIdProvider);
+    _channel = null;
+    _subscribed = false;
     if (uid == null) return const {};
     final client = ref.read(supabaseProvider);
     final channel = client.channel('online', opts: RealtimeChannelConfig(private: true, key: uid));
+    _channel = channel;
     channel
         .onPresenceSync((_) {
           final ids = {for (final entry in channel.presenceState()) entry.key};
@@ -117,10 +126,29 @@ class OnlineUsers extends Notifier<Set<String>> {
         })
         .subscribe((status, error) async {
           if (status == RealtimeSubscribeStatus.subscribed) {
-            await channel.track({'online_at': DateTime.now().toUtc().toIso8601String()});
+            _subscribed = true;
+            await _sync();
           }
         });
     ref.onDispose(() => unawaited(client.removeChannel(channel)));
     return const {};
+  }
+
+  /// Whether others see you online. Private profiles stay hidden but still
+  /// see who else is online.
+  Future<void> setVisible(bool visible) async {
+    if (_visible == visible) return;
+    _visible = visible;
+    await _sync();
+  }
+
+  Future<void> _sync() async {
+    final channel = _channel;
+    if (channel == null || !_subscribed) return;
+    if (_visible) {
+      await channel.track({'online_at': DateTime.now().toUtc().toIso8601String()});
+    } else {
+      await channel.untrack();
+    }
   }
 }

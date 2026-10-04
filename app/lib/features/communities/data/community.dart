@@ -26,6 +26,8 @@ class Community {
     this.createdAt,
     this.myRole,
     this.myStatus,
+    this.myPermissions = const [],
+    this.myRank = 0,
   });
 
   /// Reads a row from the `community_details` view.
@@ -50,6 +52,8 @@ class Community {
         createdAt: dateOrNull(json['created_at']),
         myRole: stringOrNull(json['my_role']),
         myStatus: stringOrNull(json['my_status']),
+        myPermissions: stringsOf(json['my_permissions']),
+        myRank: intOf(json['my_rank']),
       );
 
   final String id;
@@ -73,13 +77,28 @@ class Community {
   final String? myRole;
   final String? myStatus;
 
+  /// What the signed-in student may do here (see [CommunityPermissions]).
+  final List<String> myPermissions;
+
+  /// Your highest role's rank; you can only manage roles and people below it.
+  final int myRank;
+
   bool get isPrivate => visibility == 'private';
   bool get isMember => myStatus == 'active';
   bool get isPending => myStatus == 'pending';
   bool get isBanned => myStatus == 'banned';
-  bool get isMod => isMember && const {'owner', 'admin', 'moderator'}.contains(myRole);
-  bool get isAdmin => isMember && const {'owner', 'admin'}.contains(myRole);
   bool get isOwner => isMember && myRole == 'owner';
+
+  bool can(String permission) => myPermissions.contains(permission);
+
+  /// Can moderate posts and comments.
+  bool get isMod => can(CommunityPermissions.managePosts);
+
+  /// Can edit the community's details.
+  bool get isAdmin => can(CommunityPermissions.manageCommunity);
+
+  /// Has any staff permission, so the Manage screen is useful to them.
+  bool get isStaff => myPermissions.isNotEmpty;
 
   /// Private communities hide their content from non-members.
   bool get canSeeContent => !isPrivate || isMember;
@@ -107,6 +126,8 @@ class Community {
         createdAt: createdAt,
         myRole: status == null ? null : (role ?? myRole ?? 'member'),
         myStatus: status,
+        myPermissions: status == 'active' ? myPermissions : const [],
+        myRank: status == 'active' ? myRank : 0,
       );
 }
 
@@ -131,6 +152,7 @@ class CommunityMember {
     required this.status,
     required this.joinedAt,
     this.department,
+    this.roles = const [],
   });
 
   factory CommunityMember.fromJson(Json json) {
@@ -141,6 +163,10 @@ class CommunityMember {
       role: json['role'] as String? ?? 'member',
       status: json['status'] as String? ?? 'active',
       joinedAt: dateOf(json['joined_at']),
+      roles: [
+        for (final link in jsonListOf(json['community_member_roles']))
+          if (jsonOrNull(link['role']) != null) CommunityRole.fromJson(jsonOrNull(link['role'])!),
+      ]..sort((a, b) => b.position.compareTo(a.position)),
     );
   }
 
@@ -150,7 +176,70 @@ class CommunityMember {
   final String status;
   final DateTime joinedAt;
 
-  bool get isStaff => role != 'member';
+  /// Custom roles, highest first.
+  final List<CommunityRole> roles;
+
+  bool get isOwner => role == 'owner';
+
+  /// Rank used to decide who can manage whom.
+  int get rank => isOwner ? 1000000 : (roles.isEmpty ? 0 : roles.first.position);
+}
+
+class CommunityRole {
+  const CommunityRole({
+    required this.id,
+    required this.name,
+    required this.color,
+    required this.position,
+    this.permissions = const [],
+    this.membersCount = 0,
+  });
+
+  factory CommunityRole.fromJson(Json json) => CommunityRole(
+        id: json['id'] as String,
+        name: json['name'] as String? ?? '',
+        color: intOf(json['color'], 11),
+        position: intOf(json['position']),
+        permissions: stringsOf(json['permissions']),
+        membersCount: intOf((jsonListOf(json['community_member_roles']).firstOrNull ?? const {})['count']),
+      );
+
+  final String id;
+  final String name;
+  final int color;
+  final int position;
+  final List<String> permissions;
+  final int membersCount;
+}
+
+/// The permissions a community role can grant, with how they're explained.
+abstract final class CommunityPermissions {
+  static const manageCommunity = 'manage_community';
+  static const manageRoles = 'manage_roles';
+  static const manageRooms = 'manage_rooms';
+  static const manageMembers = 'manage_members';
+  static const banMembers = 'ban_members';
+  static const managePosts = 'manage_posts';
+  static const manageMessages = 'manage_messages';
+  static const postAnnouncements = 'post_announcements';
+  static const manageEvents = 'manage_events';
+  static const viewReports = 'view_reports';
+
+  /// (key, label, description) in the order they're shown.
+  static const all = <(String, String, String)>[
+    (manageCommunity, 'Edit community', 'Change the name, description, rules and privacy.'),
+    (manageRoles, 'Manage roles', 'Create, edit and give out roles ranked below their own.'),
+    (manageRooms, 'Manage rooms', 'Create, rename, lock and delete rooms.'),
+    (manageMembers, 'Manage members', 'Approve join requests and remove members.'),
+    (banMembers, 'Ban members', 'Ban people and lift bans.'),
+    (managePosts, 'Moderate posts', 'Remove posts and comments, pin posts and turn off comments.'),
+    (manageMessages, 'Moderate room chat', 'Delete messages in rooms and post in locked rooms.'),
+    (postAnnouncements, 'Post announcements', 'Post announcements that notify every member.'),
+    (manageEvents, 'Manage events', 'Host community events and manage their registrations.'),
+    (viewReports, 'Review reports', 'See and resolve reports in this community.'),
+  ];
+
+  static String label(String key) => all.where((p) => p.$1 == key).firstOrNull?.$2 ?? key;
 }
 
 class Room {

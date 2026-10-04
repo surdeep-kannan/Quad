@@ -73,6 +73,10 @@ abstract final class AppIcons {
   static const textPost = IconData(0xe6ee, fontFamily: 'PhosphorRegular');
   static const hash = IconData(0xe2a2, fontFamily: 'PhosphorRegular');
   static const at = IconData(0xe0ac, fontFamily: 'PhosphorRegular');
+  static const anonymous = IconData(0xe83e, fontFamily: 'PhosphorFill');
+  static const anonymousOutline = IconData(0xe83e, fontFamily: 'PhosphorRegular');
+  static const crown = IconData(0xe614, fontFamily: 'PhosphorFill');
+  static const roles = IconData(0xe4cc, fontFamily: 'PhosphorRegular');
   static const verified = IconData(0xe606, fontFamily: 'PhosphorFill');
   static const shield = IconData(0xe40c, fontFamily: 'PhosphorRegular');
 

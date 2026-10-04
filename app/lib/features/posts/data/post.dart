@@ -106,6 +106,7 @@ class PostAuthor extends UserRef {
     required super.fullName,
     super.avatarUrl,
     super.isVerified,
+    super.isAnonymous,
     this.collegeId,
     this.department,
   });
@@ -118,6 +119,7 @@ class PostAuthor extends UserRef {
       fullName: base.fullName,
       avatarUrl: base.avatarUrl,
       isVerified: base.isVerified,
+      isAnonymous: base.isAnonymous,
       collegeId: stringOrNull(json['college_id']),
       department: stringOrNull(json['department']),
     );
@@ -156,6 +158,8 @@ class Post {
     this.myReaction,
     this.isSaved = false,
     this.isFollowing = false,
+    this.isAnonymous = false,
+    this.isMine = false,
   });
 
   /// Reads a row from the `post_details` view.
@@ -189,6 +193,8 @@ class Post {
       myReaction: Reaction.from(json['my_reaction'] as String?),
       isSaved: boolOf(json['is_saved']),
       isFollowing: boolOf(json['is_following']),
+      isAnonymous: boolOf(json['is_anonymous']),
+      isMine: boolOf(json['is_mine']),
     );
   }
 
@@ -219,6 +225,12 @@ class Post {
   final Reaction? myReaction;
   final bool isSaved;
   final bool isFollowing;
+
+  /// Posted under a random alias. The author still sees it as theirs.
+  final bool isAnonymous;
+
+  /// Written by the signed-in student (true even when anonymous).
+  final bool isMine;
 
   bool get pollClosed => pollEndsAt != null && pollEndsAt!.isBefore(DateTime.now());
   int get totalVotes => pollOptions.fold(0, (sum, o) => sum + o.votes);
@@ -277,6 +289,8 @@ class Post {
       myReaction: clearReaction ? null : (myReaction ?? this.myReaction),
       isSaved: isSaved ?? this.isSaved,
       isFollowing: isFollowing ?? this.isFollowing,
+      isAnonymous: isAnonymous,
+      isMine: isMine,
     );
   }
 }
@@ -296,6 +310,8 @@ class Comment {
     this.repliesCount = 0,
     this.editedAt,
     this.likedByMe = false,
+    this.isAnonymous = false,
+    this.isMine = false,
   });
 
   /// Reads a row from the `comment_details` view.
@@ -313,6 +329,8 @@ class Comment {
         createdAt: dateOf(json['created_at']),
         editedAt: dateOrNull(json['edited_at']),
         likedByMe: boolOf(json['liked_by_me']),
+        isAnonymous: boolOf(json['is_anonymous']),
+        isMine: boolOf(json['is_mine']),
       );
 
   final String id;
@@ -328,6 +346,8 @@ class Comment {
   final DateTime createdAt;
   final DateTime? editedAt;
   final bool likedByMe;
+  final bool isAnonymous;
+  final bool isMine;
 
   bool get isGone => isDeleted || isRemoved;
 
@@ -345,5 +365,7 @@ class Comment {
         createdAt: createdAt,
         editedAt: editedAt,
         likedByMe: likedByMe ?? this.likedByMe,
+        isAnonymous: isAnonymous,
+        isMine: isMine,
       );
 }

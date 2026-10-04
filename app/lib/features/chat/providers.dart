@@ -78,6 +78,7 @@ class ChatState {
     this.hasOlder = true,
     this.loadingOlder = false,
     this.typing = const {},
+    this.myAnonymous = const {},
   });
 
   final ConversationInfo info;
@@ -91,6 +92,11 @@ class ChatState {
   /// Ids of people typing right now.
   final Set<String> typing;
 
+  /// Ids of anonymous messages the signed-in student sent (they have no sender).
+  final Set<String> myAnonymous;
+
+  bool isMine(Message message, String me) => message.senderId == me || myAnonymous.contains(message.id);
+
   ChatState copyWith({
     ConversationInfo? info,
     List<Message>? messages,
@@ -98,6 +104,7 @@ class ChatState {
     bool? hasOlder,
     bool? loadingOlder,
     Set<String>? typing,
+    Set<String>? myAnonymous,
   }) {
     return ChatState(
       info: info ?? this.info,
@@ -106,6 +113,7 @@ class ChatState {
       hasOlder: hasOlder ?? this.hasOlder,
       loadingOlder: loadingOlder ?? this.loadingOlder,
       typing: typing ?? this.typing,
+      myAnonymous: myAnonymous ?? this.myAnonymous,
     );
   }
 
@@ -141,6 +149,7 @@ class ConversationController extends AsyncNotifier<ChatState> {
       _repo.info(conversationId),
       _repo.messages(conversationId, limit: _pageSize),
     ).wait;
+    final mine = await _repo.myAnonymousMessages(messages.where((m) => m.isAnonymous).map((m) => m.id));
     _subscribe();
     unawaited(_repo.markRead(conversationId).catchError((_) {}));
     return ChatState(
@@ -148,6 +157,7 @@ class ConversationController extends AsyncNotifier<ChatState> {
       messages: messages,
       people: {for (final m in info.members) m.user.id: m.user},
       hasOlder: messages.length >= _pageSize,
+      myAnonymous: mine,
     );
   }
 
@@ -233,7 +243,9 @@ class ConversationController extends AsyncNotifier<ChatState> {
     }
   }
 
-  void notifyTyping() {
+  /// Tells others you're typing. Skipped when anonymous, since it would name you.
+  void notifyTyping({bool anonymous = false}) {
+    if (anonymous) return;
     _typingThrottle(() {
       unawaited(_channel?.sendBroadcastMessage(event: 'typing', payload: {'user_id': _me}));
     });
@@ -245,10 +257,12 @@ class ConversationController extends AsyncNotifier<ChatState> {
     state = AsyncData(current.copyWith(loadingOlder: true));
     try {
       final older = await _repo.messages(conversationId, before: current.messages.first.createdAt, limit: _pageSize);
+      final mine = await _repo.myAnonymousMessages(older.where((m) => m.isAnonymous).map((m) => m.id));
       final latest = state.value;
       if (latest == null || !ref.mounted) return;
       state = AsyncData(latest.copyWith(
         messages: [...older, ...latest.messages],
+        myAnonymous: {...latest.myAnonymous, ...mine},
         hasOlder: older.length >= _pageSize,
         loadingOlder: false,
       ));
@@ -267,6 +281,7 @@ class ConversationController extends AsyncNotifier<ChatState> {
     List<PickedFile> files = const [],
     String? sharedPostId,
     String? sharedEventId,
+    bool anonymous = false,
   }) async {
     final body = text?.trim();
     final hasBody = body != null && body.isNotEmpty;
@@ -297,7 +312,12 @@ class ConversationController extends AsyncNotifier<ChatState> {
       ],
       createdAt: DateTime.now(),
       sendState: SendState.sending,
+      isAnonymous: anonymous,
     );
+    if (anonymous) {
+      final current = state.value;
+      if (current != null) state = AsyncData(current.copyWith(myAnonymous: {...current.myAnonymous, draft.id}));
+    }
     _upsert(draft);
     await _deliver(draft, files);
   }
@@ -323,6 +343,7 @@ class ConversationController extends AsyncNotifier<ChatState> {
           attachments: uploaded,
           createdAt: draft.createdAt,
           sendState: SendState.sending,
+          isAnonymous: draft.isAnonymous,
         );
         _upsert(message);
       }

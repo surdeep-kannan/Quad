@@ -58,8 +58,12 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
             SharePlus.instance.share(ShareParams(text: 'Join ${community.name} on Quad\n$link'));
           },
         ),
-        if (community.isMod)
-          SheetAction(icon: AppIcons.settings, label: 'Manage community', onTap: () => context.push('/c/${community.slug}/manage')),
+        if (community.isStaff)
+          SheetAction(
+            icon: AppIcons.settings,
+            label: 'Manage community',
+            onTap: () => context.push('/c/${community.slug}/manage'),
+          ),
         SheetAction(icon: AppIcons.users, label: 'Members', onTap: () => context.push('/c/${community.slug}/members')),
         if ((community.isMember || community.isPending) && !community.isOwner)
           SheetAction(
@@ -67,7 +71,8 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
             label: community.isPending ? 'Withdraw request' : 'Leave community',
             destructive: true,
             onTap: () async {
-              final ok = community.isPending ||
+              final ok =
+                  community.isPending ||
                   await confirm(
                     context,
                     title: 'Leave ${community.name}?',
@@ -107,7 +112,11 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
         if (data == null) {
           return Scaffold(
             appBar: AppBar(),
-            body: const EmptyState(icon: AppIcons.communities, title: 'Community not found', message: 'It may have been deleted.'),
+            body: const EmptyState(
+              icon: AppIcons.communities,
+              title: 'Community not found',
+              message: 'It may have been deleted.',
+            ),
           );
         }
         return _buildPage(context, data);
@@ -181,13 +190,18 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
                         borderRadius: BorderRadius.circular(24),
                         border: Border.all(color: c.background, width: 4),
                       ),
-                      child: CommunityAvatar(name: community.name, color: community.color, url: community.avatarUrl, size: 76),
+                      child: CommunityAvatar(
+                        name: community.name,
+                        color: community.color,
+                        url: community.avatarUrl,
+                        size: 76,
+                      ),
                     ),
                   ),
                   const Spacer(),
                   Padding(
                     padding: EdgeInsets.zero,
-                    child: community.isOwner || community.isMod
+                    child: community.isStaff
                         ? AppButton(
                             label: 'Manage',
                             icon: AppIcons.settings,
@@ -227,7 +241,10 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
                       spacing: 6,
                       runSpacing: 6,
                       children: [
-                        Tag(label: CommunityCategories.label(community.category), icon: CommunityCategories.icon(community.category)),
+                        Tag(
+                          label: CommunityCategories.label(community.category),
+                          icon: CommunityCategories.icon(community.category),
+                        ),
                         GestureDetector(
                           onTap: () => context.push('/c/${community.slug}/members'),
                           child: Tag(label: plural(community.membersCount, 'member'), icon: AppIcons.users),
@@ -258,16 +275,18 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
     ];
 
     if (!community.canSeeContent && _section != _Section.about) {
-      slivers.add(SliverFillRemaining(
-        hasScrollBody: false,
-        child: EmptyState(
-          icon: AppIcons.lock,
-          title: community.isPending ? 'Request pending' : 'This community is private',
-          message: community.isPending
-              ? 'You\'ll get a notification when a moderator approves you.'
-              : 'Request to join to see posts, rooms and events.',
+      slivers.add(
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: EmptyState(
+            icon: AppIcons.lock,
+            title: community.isPending ? 'Request pending' : 'This community is private',
+            message: community.isPending
+                ? 'You\'ll get a notification when a moderator approves you.'
+                : 'Request to join to see posts, rooms and events.',
+          ),
         ),
-      ));
+      );
     } else {
       slivers.addAll(switch (_section) {
         _Section.posts => _posts(community),
@@ -311,7 +330,12 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
           child: ChipRow(
             children: [
               for (final (value, label) in [('hot', 'Hot'), ('new', 'New'), ('top', 'Top')])
-                PillChip(label: label, dense: true, selected: _sort == value, onTap: () => setState(() => _sort = value)),
+                PillChip(
+                  label: label,
+                  dense: true,
+                  selected: _sort == value,
+                  onTap: () => setState(() => _sort = value),
+                ),
             ],
           ),
         ),
@@ -350,9 +374,17 @@ class _SectionBar extends SliverPersistentHeaderDelegate {
   @override
   Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
     final c = context.colors;
-    const labels = {_Section.posts: 'Posts', _Section.rooms: 'Rooms', _Section.events: 'Events', _Section.about: 'About'};
+    const labels = {
+      _Section.posts: 'Posts',
+      _Section.rooms: 'Rooms',
+      _Section.events: 'Events',
+      _Section.about: 'About',
+    };
     return Container(
-      decoration: BoxDecoration(color: background, border: Border(bottom: BorderSide(color: line))),
+      decoration: BoxDecoration(
+        color: background,
+        border: Border(bottom: BorderSide(color: line)),
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Row(
         children: [
@@ -366,7 +398,9 @@ class _SectionBar extends SliverPersistentHeaderDelegate {
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  border: Border(bottom: BorderSide(color: section == selected ? c.ink : Colors.transparent, width: 2.5)),
+                  border: Border(
+                    bottom: BorderSide(color: section == selected ? c.ink : Colors.transparent, width: 2.5),
+                  ),
                 ),
                 child: Text(
                   labels[section]!,
@@ -393,9 +427,71 @@ class _RoomsSliver extends ConsumerWidget {
 
   final Community community;
 
+  bool get _canManage => community.can(CommunityPermissions.manageRooms);
+
   Future<void> _create(BuildContext context, WidgetRef ref) async {
-    final created = await showAppSheet<bool>(context, builder: (_) => _CreateRoomSheet(communityId: community.id));
+    final created = await showAppSheet<bool>(context, builder: (_) => _RoomSheet(communityId: community.id));
     if (created ?? false) ref.invalidate(communityRoomsProvider(community.id));
+  }
+
+  Future<void> _manage(BuildContext context, WidgetRef ref, Room room) async {
+    final repo = ref.read(communityRepositoryProvider);
+    Future<void> run(Future<void> Function() action, String done) async {
+      try {
+        await action();
+        ref.invalidate(communityRoomsProvider(community.id));
+        ref.invalidate(roomProvider(room.id));
+        if (context.mounted) showToast(context, done);
+      } catch (error) {
+        if (context.mounted) showToast(context, friendlyError(error), error: true);
+      }
+    }
+
+    await showActionSheet(
+      context,
+      title: '# ${room.name}',
+      actions: [
+        SheetAction(
+          icon: AppIcons.edit,
+          label: 'Edit room',
+          subtitle: 'Name, topic and type',
+          onTap: () async {
+            final saved = await showAppSheet<bool>(
+              context,
+              builder: (_) => _RoomSheet(communityId: community.id, room: room),
+            );
+            if (saved ?? false) {
+              ref.invalidate(communityRoomsProvider(community.id));
+              ref.invalidate(roomProvider(room.id));
+            }
+          },
+        ),
+        SheetAction(
+          icon: AppIcons.lock,
+          label: room.isLocked ? 'Unlock room' : 'Lock room',
+          subtitle: room.isLocked ? 'Everyone can chat again' : 'Only people who moderate room chat can post',
+          onTap: () => run(
+            () => repo.updateRoom(room.id, {'is_locked': !room.isLocked}),
+            room.isLocked ? 'Room unlocked' : 'Room locked',
+          ),
+        ),
+        SheetAction(
+          icon: AppIcons.trash,
+          label: 'Delete room',
+          destructive: true,
+          onTap: () async {
+            final ok = await confirm(
+              context,
+              title: 'Delete #${room.name}?',
+              message: 'Its messages will be deleted for everyone. This can\'t be undone.',
+              confirmLabel: 'Delete',
+              destructive: true,
+            );
+            if (ok) await run(() => repo.deleteRoom(room.id), 'Room deleted');
+          },
+        ),
+      ],
+    );
   }
 
   @override
@@ -405,20 +501,27 @@ class _RoomsSliver extends ConsumerWidget {
     return rooms.when(
       loading: () => const SliverToBoxAdapter(child: ListSkeleton(count: 4)),
       error: (error, _) => SliverToBoxAdapter(
-        child: ErrorState(error: error, compact: true, onRetry: () => ref.invalidate(communityRoomsProvider(community.id))),
+        child: ErrorState(
+          error: error,
+          compact: true,
+          onRetry: () => ref.invalidate(communityRoomsProvider(community.id)),
+        ),
       ),
       data: (list) => SliverList.list(
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(Space.gutter, 14, Space.gutter, 6),
             child: Text(
-              'Rooms have live chat plus voice and video. Drop in anytime.',
+              _canManage
+                  ? 'Rooms have live chat plus voice and video. Long-press a room to edit, lock or delete it.'
+                  : 'Rooms have live chat plus voice and video. Drop in anytime.',
               style: context.text.bodySmall,
             ),
           ),
           for (final room in list)
             ListTile(
               onTap: () => context.push('/room/${room.id}'),
+              onLongPress: _canManage ? () => _manage(context, ref, room) : null,
               leading: Container(
                 width: 42,
                 height: 42,
@@ -445,10 +548,14 @@ class _RoomsSliver extends ConsumerWidget {
                 overflow: TextOverflow.ellipsis,
               ),
               trailing: room.hasUnread
-                  ? Container(width: 9, height: 9, decoration: BoxDecoration(color: c.accent, shape: BoxShape.circle))
+                  ? Container(
+                      width: 9,
+                      height: 9,
+                      decoration: BoxDecoration(color: c.accent, shape: BoxShape.circle),
+                    )
                   : Text(room.lastMessageAt == null ? '' : timeAgo(room.lastMessageAt!), style: context.text.bodySmall),
             ),
-          if (community.isMod)
+          if (_canManage)
             Padding(
               padding: const EdgeInsets.all(Space.gutter),
               child: AppButton(
@@ -466,20 +573,24 @@ class _RoomsSliver extends ConsumerWidget {
   }
 }
 
-class _CreateRoomSheet extends ConsumerStatefulWidget {
-  const _CreateRoomSheet({required this.communityId});
+/// Creates a room, or edits [room] when given.
+class _RoomSheet extends ConsumerStatefulWidget {
+  const _RoomSheet({required this.communityId, this.room});
 
   final String communityId;
+  final Room? room;
 
   @override
-  ConsumerState<_CreateRoomSheet> createState() => _CreateRoomSheetState();
+  ConsumerState<_RoomSheet> createState() => _RoomSheetState();
 }
 
-class _CreateRoomSheetState extends ConsumerState<_CreateRoomSheet> {
-  final _name = TextEditingController();
-  final _topic = TextEditingController();
-  String _kind = 'study';
+class _RoomSheetState extends ConsumerState<_RoomSheet> {
+  late final _name = TextEditingController(text: widget.room?.name);
+  late final _topic = TextEditingController(text: widget.room?.topic);
+  late String _kind = widget.room?.kind ?? 'study';
   bool _busy = false;
+
+  bool get _editing => widget.room != null;
 
   @override
   void dispose() {
@@ -490,13 +601,15 @@ class _CreateRoomSheetState extends ConsumerState<_CreateRoomSheet> {
 
   Future<void> _create() async {
     setState(() => _busy = true);
+    final repo = ref.read(communityRepositoryProvider);
+    final name = _name.text.trim();
+    final topic = _topic.text.trim().isEmpty ? null : _topic.text.trim();
     try {
-      await ref.read(communityRepositoryProvider).createRoom(
-            widget.communityId,
-            name: _name.text.trim(),
-            topic: _topic.text.trim().isEmpty ? null : _topic.text.trim(),
-            kind: _kind,
-          );
+      if (_editing) {
+        await repo.updateRoom(widget.room!.id, {'name': name, 'topic': topic, 'kind': _kind});
+      } else {
+        await repo.createRoom(widget.communityId, name: name, topic: topic, kind: _kind);
+      }
       if (mounted) Navigator.of(context).pop(true);
     } catch (error) {
       if (mounted) showToast(context, friendlyError(error), error: true);
@@ -512,13 +625,13 @@ class _CreateRoomSheetState extends ConsumerState<_CreateRoomSheet> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('New room', style: context.text.headlineSmall),
+          Text(_editing ? 'Edit room' : 'New room', style: context.text.headlineSmall),
           const SizedBox(height: Space.lg),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
-              for (final entry in RoomKinds.all.entries.where((e) => e.key != 'general'))
+              for (final entry in RoomKinds.all.entries.where((e) => e.key != 'general' || _kind == 'general'))
                 PillChip(
                   label: entry.value,
                   icon: RoomKinds.icon(entry.key),
@@ -538,9 +651,17 @@ class _CreateRoomSheetState extends ConsumerState<_CreateRoomSheet> {
             decoration: const InputDecoration(hintText: 'room-name', prefixIcon: Icon(AppIcons.hash, size: 18)),
           ),
           const SizedBox(height: Space.md),
-          TextField(controller: _topic, decoration: const InputDecoration(hintText: 'What is this room for? (optional)')),
+          TextField(
+            controller: _topic,
+            decoration: const InputDecoration(hintText: 'What is this room for? (optional)'),
+          ),
           const SizedBox(height: Space.xl),
-          AppButton(label: 'Create room', expand: true, loading: _busy, onPressed: _name.text.trim().length < 2 ? null : _create),
+          AppButton(
+            label: _editing ? 'Save room' : 'Create room',
+            expand: true,
+            loading: _busy,
+            onPressed: _name.text.trim().length < 2 ? null : _create,
+          ),
         ],
       ),
     );
@@ -558,11 +679,15 @@ class _EventsSliver extends ConsumerWidget {
     return events.when(
       loading: () => const SliverToBoxAdapter(child: ListSkeleton(count: 3)),
       error: (error, _) => SliverToBoxAdapter(
-        child: ErrorState(error: error, compact: true, onRetry: () => ref.invalidate(communityEventsProvider(community.id))),
+        child: ErrorState(
+          error: error,
+          compact: true,
+          onRetry: () => ref.invalidate(communityEventsProvider(community.id)),
+        ),
       ),
       data: (list) => SliverList.list(
         children: [
-          if (community.isMod)
+          if (community.can(CommunityPermissions.manageEvents))
             Padding(
               padding: const EdgeInsets.fromLTRB(Space.gutter, Space.md, Space.gutter, 0),
               child: AppButton(
@@ -574,7 +699,12 @@ class _EventsSliver extends ConsumerWidget {
               ),
             ),
           if (list.isEmpty)
-            const EmptyState(icon: AppIcons.events, title: 'No upcoming events', message: 'Check back soon.', compact: true)
+            const EmptyState(
+              icon: AppIcons.events,
+              title: 'No upcoming events',
+              message: 'Check back soon.',
+              compact: true,
+            )
           else
             for (final event in list) EventRow(event: event),
           const SizedBox(height: 80),
@@ -623,7 +753,8 @@ class _About extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(community.rules[i].title, style: context.text.titleSmall),
-                          if (community.rules[i].body != null) Text(community.rules[i].body!, style: context.text.bodySmall),
+                          if (community.rules[i].body != null)
+                            Text(community.rules[i].body!, style: context.text.bodySmall),
                         ],
                       ),
                     ),
@@ -633,11 +764,7 @@ class _About extends StatelessWidget {
             const SizedBox(height: Space.md),
           ],
           if (community.tags.isNotEmpty) ...[
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [for (final tag in community.tags) Tag(label: '#$tag')],
-            ),
+            Wrap(spacing: 8, runSpacing: 8, children: [for (final tag in community.tags) Tag(label: '#$tag')]),
             const SizedBox(height: Space.xl),
           ],
           if (community.createdAt != null)

@@ -329,8 +329,8 @@ class CommentsNotifier extends AsyncNotifier<List<Comment>> {
   @override
   Future<List<Comment>> build() => _repo.comments(postId);
 
-  Future<void> add(String body, {String? parentId}) async {
-    final comment = await _repo.addComment(postId, body, parentId: parentId);
+  Future<void> add(String body, {String? parentId, bool anonymous = false}) async {
+    final comment = await _repo.addComment(postId, body, parentId: parentId, anonymous: anonymous);
     if (!ref.mounted) return;
     final list = [...state.value ?? <Comment>[], comment];
     state = AsyncData(list);

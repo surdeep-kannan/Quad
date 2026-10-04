@@ -217,10 +217,10 @@ class _ReelPageState extends ConsumerState<_ReelPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 GestureDetector(
-                  onTap: () => context.push('/u/${post.author.username}'),
+                  onTap: post.author.isAnonymous ? null : () => context.push('/u/${post.author.username}'),
                   child: Row(
                     children: [
-                      UserAvatar(name: post.author.fullName, url: post.author.avatarUrl, size: 34),
+                      AuthorAvatar(user: post.author, size: 34),
                       const SizedBox(width: 10),
                       Flexible(
                         child: Text(post.author.fullName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15)),

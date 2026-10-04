@@ -177,8 +177,8 @@ class _PostHeader extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         GestureDetector(
-          onTap: () => context.push('/u/${post.author.username}'),
-          child: UserAvatar(name: post.author.fullName, url: post.author.avatarUrl, size: 40),
+          onTap: post.author.isAnonymous ? null : () => context.push('/u/${post.author.username}'),
+          child: AuthorAvatar(user: post.author, size: 40),
         ),
         const SizedBox(width: 10),
         Expanded(
@@ -189,8 +189,12 @@ class _PostHeader extends ConsumerWidget {
                 children: [
                   Flexible(
                     child: GestureDetector(
-                      onTap: () => context.push('/u/${post.author.username}'),
-                      child: NameLine(name: post.author.fullName, verified: post.author.isVerified),
+                      onTap: post.author.isAnonymous ? null : () => context.push('/u/${post.author.username}'),
+                      child: NameLine(
+                        name: post.author.fullName,
+                        verified: post.author.isVerified,
+                        style: post.author.isAnonymous ? context.text.titleSmall!.copyWith(color: c.inkMuted) : null,
+                      ),
                     ),
                   ),
                   Text('  ·  ${timeAgo(post.createdAt)}', style: context.text.bodySmall),
@@ -220,7 +224,7 @@ class _PostHeader extends ConsumerWidget {
                   ),
                 )
               else
-                Text('@${post.author.username}', style: context.text.bodySmall),
+                Text(post.author.isAnonymous ? 'Anonymous' : '@${post.author.username}', style: context.text.bodySmall),
             ],
           ),
         ),
@@ -827,7 +831,7 @@ class _ShareSheet extends ConsumerWidget {
 
 /// The "..." menu on a post.
 Future<void> showPostMenu(BuildContext context, WidgetRef ref, Post post, {bool isMod = false}) {
-  final mine = post.author.id == ref.read(supabaseProvider).uid;
+  final mine = post.isMine;
   final actions = ref.read(postActionsProvider);
 
   Future<void> run(Future<void> Function() action, [String? done]) async {

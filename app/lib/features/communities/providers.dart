@@ -87,3 +87,7 @@ final communityRoomsProvider = FutureProvider.autoDispose.family<List<Room>, Str
 final roomProvider = FutureProvider.autoDispose.family<Room?, String>((ref, roomId) {
   return ref.watch(communityRepositoryProvider).room(roomId);
 });
+
+final communityRolesProvider = FutureProvider.autoDispose.family<List<CommunityRole>, String>((ref, communityId) {
+  return ref.watch(communityRepositoryProvider).roles(communityId);
+});

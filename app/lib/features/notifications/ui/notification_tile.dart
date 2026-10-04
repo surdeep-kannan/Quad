@@ -30,9 +30,12 @@ class NotificationTile extends ConsumerWidget {
     };
   }
 
+  /// Set when the actor posted or commented anonymously.
+  String? get _alias => notification.data['alias'] as String?;
+
   (IconData, String) _describe() {
     final n = notification;
-    final who = n.actor?.fullName ?? 'Someone';
+    final who = n.actor?.fullName ?? _alias ?? 'Someone';
     final snippet = n.data['snippet'] as String?;
     final what = (n.post?['title'] as String?) ?? (n.post?['body'] as String?) ?? 'your post';
     return switch (n.type) {
@@ -44,16 +47,31 @@ class NotificationTile extends ConsumerWidget {
       'thread_activity' => (AppIcons.chatText, '$who commented on a discussion you follow'),
       'announcement' => (AppIcons.megaphone, '${n.community?.name ?? 'A community'}: ${snippet ?? 'new announcement'}'),
       'community_join_request' => (AppIcons.userPlus, '$who asked to join ${n.community?.name ?? 'your community'}'),
-      'community_join_approved' => (AppIcons.checkCircle, 'You\'re in! ${n.community?.name ?? 'The community'} approved your request'),
-      'community_role' => (AppIcons.shield, 'You\'re now ${n.data['role'] ?? 'staff'} of ${n.community?.name ?? 'a community'}'),
+      'community_join_approved' => (
+        AppIcons.checkCircle,
+        'You\'re in! ${n.community?.name ?? 'The community'} approved your request',
+      ),
+      'community_role' => (
+        AppIcons.roles,
+        'You got the ${n.data['role'] ?? 'new'} role in ${n.community?.name ?? 'a community'}',
+      ),
       'event_registration' => (AppIcons.ticket, '$who registered for ${n.event?['title'] ?? 'your event'}'),
       'event_update' => (AppIcons.megaphone, '${n.event?['title'] ?? 'Event'}: ${snippet ?? 'new update'}'),
-      'event_reminder' => (AppIcons.clock, '${n.event?['title'] ?? 'Your event'} starts ${n.data['when'] == 'hour' ? 'within the hour' : 'tomorrow'}'),
-      'event_waitlist_promoted' => (AppIcons.ticket, 'A spot opened up. You\'re going to ${n.event?['title'] ?? 'the event'}!'),
+      'event_reminder' => (
+        AppIcons.clock,
+        '${n.event?['title'] ?? 'Your event'} starts ${n.data['when'] == 'hour' ? 'within the hour' : 'tomorrow'}',
+      ),
+      'event_waitlist_promoted' => (
+        AppIcons.ticket,
+        'A spot opened up. You\'re going to ${n.event?['title'] ?? 'the event'}!',
+      ),
       'missed_call' => (AppIcons.phone, 'Missed ${n.data['kind'] == 'video' ? 'video' : 'voice'} call from $who'),
       'room_invite' => (AppIcons.hash, '$who invited you to #${n.data['room'] ?? 'a room'}'),
       'report_update' => (AppIcons.shield, 'Moderators reviewed your report'),
-      'content_removed' => (AppIcons.warning, 'Your ${n.data['target'] ?? 'post'} was removed: ${n.data['reason'] ?? ''}'),
+      'content_removed' => (
+        AppIcons.warning,
+        'Your ${n.data['target'] ?? 'post'} was removed: ${n.data['reason'] ?? ''}',
+      ),
       _ => (AppIcons.bell, 'New activity'),
     };
   }
@@ -78,16 +96,31 @@ class NotificationTile extends ConsumerWidget {
               children: [
                 if (actor != null)
                   UserAvatar(name: actor.fullName, url: actor.avatarUrl, size: 44)
+                else if (_alias != null)
+                  AnonymousAvatar(alias: _alias!, size: 44)
                 else if (notification.community != null)
-                  CommunityAvatar(name: notification.community!.name, color: notification.community!.color, url: notification.community!.avatarUrl, size: 44)
+                  CommunityAvatar(
+                    name: notification.community!.name,
+                    color: notification.community!.color,
+                    url: notification.community!.avatarUrl,
+                    size: 44,
+                  )
                 else
-                  CircleAvatar(radius: 22, backgroundColor: c.surfaceMuted, child: Icon(icon, color: c.ink, size: 20)),
+                  CircleAvatar(
+                    radius: 22,
+                    backgroundColor: c.surfaceMuted,
+                    child: Icon(icon, color: c.ink, size: 20),
+                  ),
                 Positioned(
                   right: -4,
                   bottom: -4,
                   child: Container(
                     padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(color: c.ink, shape: BoxShape.circle, border: Border.all(color: c.surface, width: 2)),
+                    decoration: BoxDecoration(
+                      color: c.ink,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: c.surface, width: 2),
+                    ),
                     child: Icon(icon, size: 11, color: c.inkInverse),
                   ),
                 ),
@@ -98,14 +131,24 @@ class NotificationTile extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(text, maxLines: compact ? 2 : 3, overflow: TextOverflow.ellipsis, style: context.text.bodyMedium),
+                  Text(
+                    text,
+                    maxLines: compact ? 2 : 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.text.bodyMedium,
+                  ),
                   const SizedBox(height: 2),
                   Text(timeAgo(notification.createdAt), style: context.text.bodySmall),
                 ],
               ),
             ),
             if (notification.isUnread && !compact)
-              Container(width: 8, height: 8, margin: const EdgeInsets.only(left: 8), decoration: BoxDecoration(color: c.accent, shape: BoxShape.circle)),
+              Container(
+                width: 8,
+                height: 8,
+                margin: const EdgeInsets.only(left: 8),
+                decoration: BoxDecoration(color: c.accent, shape: BoxShape.circle),
+              ),
           ],
         ),
       ),

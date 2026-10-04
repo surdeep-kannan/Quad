@@ -134,7 +134,9 @@ try {
         [communities[slug], ids[key]]);
     }
   }
-  await q(`update public.community_members set role = 'moderator' where community_id = $1 and user_id = $2`,
+  // Every community starts with Admin and Moderator roles.
+  await q(`insert into public.community_member_roles (community_id, user_id, role_id)
+           select $1, $2, id from public.community_roles where community_id = $1 and name = 'Moderator'`,
     [communities['coding-club'], ids.diya]);
 
   const rooms = [

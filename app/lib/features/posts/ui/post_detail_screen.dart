@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../../../core/data/supabase_providers.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/context_x.dart';
 import '../../../core/utils/errors.dart';
@@ -38,6 +37,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
   final _focus = FocusNode();
   Comment? _replyTo;
   bool _sending = false;
+  bool _anonymous = false;
   bool _newestFirst = false;
 
   @override
@@ -57,7 +57,10 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
     if (text.isEmpty) return;
     setState(() => _sending = true);
     try {
-      await ref.read(commentsProvider(widget.postId).notifier).add(text, parentId: _replyTo?.id);
+      final private = ref.read(myProfileProvider).value?.isPrivate ?? false;
+      await ref
+          .read(commentsProvider(widget.postId).notifier)
+          .add(text, parentId: _replyTo?.id, anonymous: _anonymous || private);
       _input.clear();
       setState(() => _replyTo = null);
       HapticFeedback.lightImpact();
@@ -85,7 +88,11 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
         error: (error, _) => ErrorState(error: error, onRetry: () => ref.invalidate(postProvider(widget.postId))),
         data: (data) {
           if (data == null) {
-            return const EmptyState(icon: AppIcons.eyeSlash, title: 'Post not available', message: 'It may have been deleted or is only visible to members.');
+            return const EmptyState(
+              icon: AppIcons.eyeSlash,
+              title: 'Post not available',
+              message: 'It may have been deleted or is only visible to members.',
+            );
           }
           final live = ref.livePost(data);
           final community = data.community == null ? null : ref.watch(communityProvider(data.community!.slug)).value;
@@ -101,7 +108,9 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                   },
                   child: CustomScrollView(
                     slivers: [
-                      SliverToBoxAdapter(child: PostCard(post: data, inDetail: true, isMod: isMod)),
+                      SliverToBoxAdapter(
+                        child: PostCard(post: data, inDetail: true, isMod: isMod),
+                      ),
                       SliverToBoxAdapter(
                         child: Padding(
                           padding: const EdgeInsets.fromLTRB(Space.gutter, Space.lg, 8, 4),
@@ -109,13 +118,19 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                             children: [
                               Text('Comments', style: context.text.headlineSmall),
                               const SizedBox(width: 8),
-                              Text(compactCount(live.commentsCount), style: context.text.titleMedium!.copyWith(color: c.inkSubtle)),
+                              Text(
+                                compactCount(live.commentsCount),
+                                style: context.text.titleMedium!.copyWith(color: c.inkSubtle),
+                              ),
                               const Spacer(),
                               TextButton.icon(
                                 onPressed: () => setState(() => _newestFirst = !_newestFirst),
                                 icon: const Icon(AppIcons.filter, size: 16),
                                 label: Text(_newestFirst ? 'Newest' : 'Top'),
-                                style: TextButton.styleFrom(foregroundColor: c.inkMuted, textStyle: context.text.labelMedium),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: c.inkMuted,
+                                  textStyle: context.text.labelMedium,
+                                ),
                               ),
                             ],
                           ),
@@ -124,7 +139,11 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                       comments.when(
                         loading: () => const SliverToBoxAdapter(child: ListSkeleton(count: 3)),
                         error: (error, _) => SliverToBoxAdapter(
-                          child: ErrorState(error: error, compact: true, onRetry: () => ref.invalidate(commentsProvider(widget.postId))),
+                          child: ErrorState(
+                            error: error,
+                            compact: true,
+                            onRetry: () => ref.invalidate(commentsProvider(widget.postId)),
+                          ),
                         ),
                         data: (list) {
                           if (list.isEmpty) {
@@ -174,6 +193,8 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                   focusNode: _focus,
                   replyTo: _replyTo,
                   sending: _sending,
+                  anonymous: _anonymous,
+                  onAnonymousChanged: (value) => setState(() => _anonymous = value),
                   onCancelReply: () => setState(() => _replyTo = null),
                   onSend: _send,
                 ),
@@ -194,11 +215,13 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
       children.putIfAbsent(parent, () => []).add(comment);
     }
     final roots = children[null] ?? [];
-    roots.sort((a, b) => newestFirst
-        ? b.createdAt.compareTo(a.createdAt)
-        : (b.likesCount + b.repliesCount).compareTo(a.likesCount + a.repliesCount) != 0
-            ? (b.likesCount + b.repliesCount).compareTo(a.likesCount + a.repliesCount)
-            : a.createdAt.compareTo(b.createdAt));
+    roots.sort(
+      (a, b) => newestFirst
+          ? b.createdAt.compareTo(a.createdAt)
+          : (b.likesCount + b.repliesCount).compareTo(a.likesCount + a.repliesCount) != 0
+          ? (b.likesCount + b.repliesCount).compareTo(a.likesCount + a.repliesCount)
+          : a.createdAt.compareTo(b.createdAt),
+    );
     final out = <Comment>[];
     void visit(Comment comment) {
       out.add(comment);
@@ -221,7 +244,7 @@ class _CommentTile extends ConsumerWidget {
   final VoidCallback? onReply;
 
   Future<void> _menu(BuildContext context, WidgetRef ref) async {
-    final mine = comment.author?.id == ref.read(supabaseProvider).uid;
+    final mine = comment.isMine;
     final notifier = ref.read(commentsProvider(postId).notifier);
     await showActionSheet(
       context,
@@ -265,7 +288,9 @@ class _CommentTile extends ConsumerWidget {
             destructive: true,
             onTap: () async {
               try {
-                await ref.read(moderationRepositoryProvider).moderate(targetType: 'comment', targetId: comment.id, action: 'remove');
+                await ref
+                    .read(moderationRepositoryProvider)
+                    .moderate(targetType: 'comment', targetId: comment.id, action: 'remove');
                 ref.invalidate(commentsProvider(postId));
               } catch (error) {
                 if (context.mounted) showToast(context, friendlyError(error), error: true);
@@ -291,16 +316,20 @@ class _CommentTile extends ConsumerWidget {
     return Padding(
       padding: EdgeInsets.only(left: Space.gutter + depth * 18.0, right: 8),
       child: Container(
-        decoration: depth > 0 ? BoxDecoration(border: Border(left: BorderSide(color: c.line, width: 2))) : null,
+        decoration: depth > 0
+            ? BoxDecoration(
+                border: Border(left: BorderSide(color: c.line, width: 2)),
+              )
+            : null,
         padding: EdgeInsets.only(left: depth > 0 ? 12 : 0, top: 10, bottom: 2),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             GestureDetector(
-              onTap: author == null ? null : () => context.push('/u/${author.username}'),
+              onTap: author == null || author.isAnonymous ? null : () => context.push('/u/${author.username}'),
               child: author == null
                   ? CircleAvatar(radius: 14, backgroundColor: c.surfaceMuted)
-                  : UserAvatar(name: author.fullName, url: author.avatarUrl, size: 28),
+                  : AuthorAvatar(user: author, size: 28),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -311,10 +340,25 @@ class _CommentTile extends ConsumerWidget {
                     children: [
                       Flexible(
                         child: author == null
-                            ? Text(comment.isRemoved ? 'Removed' : 'Deleted', style: context.text.labelMedium!.copyWith(color: c.inkSubtle))
-                            : NameLine(name: author.fullName, verified: author.isVerified, style: context.text.labelLarge!.copyWith(fontSize: 14)),
+                            ? Text(
+                                comment.isRemoved ? 'Removed' : 'Deleted',
+                                style: context.text.labelMedium!.copyWith(color: c.inkSubtle),
+                              )
+                            : NameLine(
+                                name: comment.isMine && author.isAnonymous
+                                    ? '${author.fullName} (you)'
+                                    : author.fullName,
+                                verified: author.isVerified,
+                                style: context.text.labelLarge!.copyWith(
+                                  fontSize: 14,
+                                  color: author.isAnonymous ? c.inkMuted : null,
+                                ),
+                              ),
                       ),
-                      Text('  ${timeAgo(comment.createdAt)}${comment.editedAt != null ? ' · edited' : ''}', style: context.text.bodySmall),
+                      Text(
+                        '  ${timeAgo(comment.createdAt)}${comment.editedAt != null ? ' · edited' : ''}',
+                        style: context.text.bodySmall,
+                      ),
                     ],
                   ),
                   const SizedBox(height: 2),
@@ -349,7 +393,10 @@ class _CommentTile extends ConsumerWidget {
                                 ),
                                 if (comment.likesCount > 0) ...[
                                   const SizedBox(width: 4),
-                                  Text('${comment.likesCount}', style: context.text.labelSmall!.copyWith(color: c.inkMuted)),
+                                  Text(
+                                    '${comment.likesCount}',
+                                    style: context.text.labelSmall!.copyWith(color: c.inkMuted),
+                                  ),
                                 ],
                               ],
                             ),
@@ -408,6 +455,8 @@ class _CommentComposer extends ConsumerWidget {
     required this.focusNode,
     required this.replyTo,
     required this.sending,
+    required this.anonymous,
+    required this.onAnonymousChanged,
     required this.onCancelReply,
     required this.onSend,
   });
@@ -416,6 +465,8 @@ class _CommentComposer extends ConsumerWidget {
   final FocusNode focusNode;
   final Comment? replyTo;
   final bool sending;
+  final bool anonymous;
+  final ValueChanged<bool> onAnonymousChanged;
   final VoidCallback onCancelReply;
   final VoidCallback onSend;
 
@@ -424,7 +475,10 @@ class _CommentComposer extends ConsumerWidget {
     final c = context.colors;
     final me = ref.watch(myProfileProvider).value;
     return Container(
-      decoration: BoxDecoration(color: c.surface, border: Border(top: BorderSide(color: c.line))),
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border(top: BorderSide(color: c.line)),
+      ),
       padding: EdgeInsets.fromLTRB(12, 8, 8, 8 + context.safePadding.bottom),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -442,7 +496,10 @@ class _CommentComposer extends ConsumerWidget {
                       style: context.text.labelMedium!.copyWith(color: c.inkMuted),
                     ),
                   ),
-                  GestureDetector(onTap: onCancelReply, child: Icon(AppIcons.close, size: 16, color: c.inkMuted)),
+                  GestureDetector(
+                    onTap: onCancelReply,
+                    child: Icon(AppIcons.close, size: 16, color: c.inkMuted),
+                  ),
                 ],
               ),
             ),
@@ -451,8 +508,24 @@ class _CommentComposer extends ConsumerWidget {
             children: [
               if (me != null)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: UserAvatar(name: me.fullName, url: me.avatarUrl, size: 32),
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Tooltip(
+                    message: me.isPrivate
+                        ? 'Your profile is private, so comments are always anonymous'
+                        : (anonymous ? 'Commenting anonymously (tap to switch)' : 'Tap to comment anonymously'),
+                    child: InkResponse(
+                      onTap: me.isPrivate
+                          ? null
+                          : () {
+                              HapticFeedback.selectionClick();
+                              onAnonymousChanged(!anonymous);
+                            },
+                      radius: 22,
+                      child: me.isPrivate || anonymous
+                          ? const AnonymousAvatar(alias: 'me', size: 34)
+                          : UserAvatar(name: me.fullName, url: me.avatarUrl, size: 34),
+                    ),
+                  ),
                 ),
               const SizedBox(width: 10),
               Expanded(
@@ -464,11 +537,19 @@ class _CommentComposer extends ConsumerWidget {
                   textCapitalization: TextCapitalization.sentences,
                   style: context.text.bodyMedium,
                   decoration: InputDecoration(
-                    hintText: replyTo == null ? 'Add a comment…' : 'Write a reply…',
+                    hintText: (me?.isPrivate ?? false) || anonymous
+                        ? (replyTo == null ? 'Comment anonymously…' : 'Reply anonymously…')
+                        : (replyTo == null ? 'Add a comment…' : 'Write a reply…'),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(22), borderSide: BorderSide.none),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(22), borderSide: BorderSide.none),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(22), borderSide: BorderSide(color: c.lineStrong)),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(22),
+                      borderSide: BorderSide.none,
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(22),
+                      borderSide: BorderSide(color: c.lineStrong),
+                    ),
                   ),
                 ),
               ),

@@ -9,15 +9,18 @@ class UserRef {
     this.avatarUrl,
     this.isVerified = false,
     this.lastSeenAt,
+    this.isAnonymous = false,
   });
 
+  /// Anonymous authors come back with no id and their alias as the name.
   factory UserRef.fromJson(Json json) => UserRef(
-        id: json['id'] as String,
+        id: json['id'] as String? ?? '',
         username: json['username'] as String? ?? '',
         fullName: json['full_name'] as String? ?? 'Student',
         avatarUrl: stringOrNull(json['avatar_url']),
         isVerified: boolOf(json['is_verified']),
         lastSeenAt: dateOrNull(json['last_seen_at']),
+        isAnonymous: boolOf(json['is_anonymous']) && json['id'] == null,
       );
 
   final String id;
@@ -26,6 +29,9 @@ class UserRef {
   final String? avatarUrl;
   final bool isVerified;
   final DateTime? lastSeenAt;
+
+  /// Shown to others as a random alias; can't be opened or messaged.
+  final bool isAnonymous;
 
   String get firstName => fullName.split(' ').first;
 }

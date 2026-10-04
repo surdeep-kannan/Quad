@@ -25,9 +25,9 @@ class SettingsScreen extends ConsumerWidget {
     final c = context.colors;
 
     Widget section(String title) => Padding(
-          padding: const EdgeInsets.fromLTRB(Space.gutter, Space.xl, Space.gutter, Space.sm),
-          child: Text(title.toUpperCase(), style: context.text.labelSmall!.copyWith(color: c.inkSubtle, letterSpacing: 1)),
-        );
+      padding: const EdgeInsets.fromLTRB(Space.gutter, Space.xl, Space.gutter, Space.sm),
+      child: Text(title.toUpperCase(), style: context.text.labelSmall!.copyWith(color: c.inkSubtle, letterSpacing: 1)),
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -37,9 +37,22 @@ class SettingsScreen extends ConsumerWidget {
       body: ListView(
         children: [
           section('Account'),
-          ListTile(leading: const Icon(AppIcons.user), title: const Text('Edit profile'), onTap: () => context.push('/profile/edit')),
-          ListTile(leading: const Icon(AppIcons.bookmark), title: const Text('Saved posts'), onTap: () => context.push('/saved')),
-          if (me != null) ListTile(leading: const Icon(AppIcons.at), title: const Text('Username'), subtitle: Text('@${me.username}')),
+          ListTile(
+            leading: const Icon(AppIcons.user),
+            title: const Text('Edit profile'),
+            onTap: () => context.push('/profile/edit'),
+          ),
+          ListTile(
+            leading: const Icon(AppIcons.bookmark),
+            title: const Text('Saved posts'),
+            onTap: () => context.push('/saved'),
+          ),
+          if (me != null)
+            ListTile(
+              leading: const Icon(AppIcons.at),
+              title: const Text('Username'),
+              subtitle: Text('@${me.username}'),
+            ),
           section('Appearance'),
           for (final (value, label, icon) in [
             (ThemeMode.system, 'Match my phone', AppIcons.device),
@@ -53,14 +66,45 @@ class SettingsScreen extends ConsumerWidget {
               onTap: () => ref.read(themeModeProvider.notifier).set(value),
             ),
           section('Privacy & safety'),
-          ListTile(leading: const Icon(AppIcons.block), title: const Text('Blocked people'), onTap: () => context.push('/settings/blocked')),
+          if (me != null)
+            SwitchListTile(
+              secondary: Icon(me.isPrivate ? AppIcons.lock : AppIcons.globe),
+              title: const Text('Private profile'),
+              subtitle: Text(
+                me.isPrivate
+                    ? 'Only people you follow can see your profile, posts and details. In communities your posts, '
+                          'comments and room messages show a random anonymous name.'
+                    : 'Anyone can see your profile. Turn this on to hide it and stay anonymous in communities.',
+              ),
+              isThreeLine: true,
+              value: me.isPrivate,
+              onChanged: (value) async {
+                try {
+                  await ref.read(myProfileProvider.notifier).save({'is_private': value});
+                  if (context.mounted) {
+                    showToast(context, value ? 'Your profile is now private' : 'Your profile is now public');
+                  }
+                } catch (error) {
+                  if (context.mounted) showToast(context, friendlyError(error), error: true);
+                }
+              },
+            ),
+          ListTile(
+            leading: const Icon(AppIcons.block),
+            title: const Text('Blocked people'),
+            onTap: () => context.push('/settings/blocked'),
+          ),
           ListTile(
             leading: const Icon(AppIcons.shield),
             title: const Text('Community guidelines'),
             subtitle: const Text('Be kind, no harassment, no spam, no hate. Report anything that feels off.'),
           ),
           section('Discover'),
-          ListTile(leading: const Icon(AppIcons.ranking), title: const Text('College rankings'), onTap: () => context.push('/colleges')),
+          ListTile(
+            leading: const Icon(AppIcons.ranking),
+            title: const Text('College rankings'),
+            onTap: () => context.push('/colleges'),
+          ),
           const SizedBox(height: Space.xl),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: Space.gutter),
@@ -70,7 +114,12 @@ class SettingsScreen extends ConsumerWidget {
               variant: ButtonVariant.danger,
               expand: true,
               onPressed: () async {
-                final ok = await confirm(context, title: 'Sign out?', message: 'You can sign back in anytime.', confirmLabel: 'Sign out');
+                final ok = await confirm(
+                  context,
+                  title: 'Sign out?',
+                  message: 'You can sign back in anytime.',
+                  confirmLabel: 'Sign out',
+                );
                 if (ok) await ref.read(authRepositoryProvider).signOut();
               },
             ),
@@ -97,7 +146,11 @@ class BlockedUsersScreen extends ConsumerWidget {
         loading: () => const ListSkeleton(),
         error: (e, _) => ErrorState(error: e, onRetry: () => ref.invalidate(blockedUsersProvider)),
         data: (list) => list.isEmpty
-            ? const EmptyState(icon: AppIcons.block, title: 'No one blocked', message: 'People you block can\'t message you or see your posts.')
+            ? const EmptyState(
+                icon: AppIcons.block,
+                title: 'No one blocked',
+                message: 'People you block can\'t message you or see your posts.',
+              )
             : ListView(
                 children: [
                   for (final p in list)

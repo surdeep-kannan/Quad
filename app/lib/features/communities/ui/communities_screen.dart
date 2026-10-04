@@ -200,7 +200,7 @@ class _MineTile extends StatelessWidget {
               clipBehavior: Clip.none,
               children: [
                 CommunityAvatar(name: community.name, color: community.color, url: community.avatarUrl, size: 60),
-                if (community.isMod) const Positioned(right: -4, bottom: -4, child: _ModDot()),
+                if (community.isStaff) const Positioned(right: -4, bottom: -4, child: _ModDot()),
               ],
             ),
             const SizedBox(height: 6),

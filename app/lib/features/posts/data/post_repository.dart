@@ -90,6 +90,7 @@ class PostRepository {
     String? eventId,
     List<String>? pollOptions,
     DateTime? pollEndsAt,
+    bool anonymous = false,
   }) async {
     return _client.rpc<String>('create_post', params: {
       'p_type': type.key,
@@ -101,6 +102,7 @@ class PostRepository {
       'p_event_id': eventId,
       'p_poll_options': pollOptions,
       'p_poll_ends_at': pollEndsAt?.toUtc().toIso8601String(),
+      'p_is_anonymous': anonymous,
     });
   }
 
@@ -182,10 +184,10 @@ class PostRepository {
     return rows.map(Comment.fromJson).toList();
   }
 
-  Future<Comment> addComment(String postId, String body, {String? parentId}) async {
+  Future<Comment> addComment(String postId, String body, {String? parentId, bool anonymous = false}) async {
     final inserted = await _client
         .from('comments')
-        .insert({'post_id': postId, 'author_id': _client.uid, 'body': body, 'parent_id': ?parentId})
+        .insert({'post_id': postId, 'author_id': _client.uid, 'body': body, 'parent_id': ?parentId, 'is_anonymous': anonymous})
         .select('id')
         .single();
     final row = await _client.from('comment_details').select().eq('id', inserted['id'] as String).single();

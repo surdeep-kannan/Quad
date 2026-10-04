@@ -73,9 +73,18 @@ class _EventEditorScreenState extends ConsumerState<EventEditorScreen> {
       _load();
     } else {
       _loaded = true;
-      if (widget.communityId != null) {
-        final mine = ref.read(myCommunitiesProvider).value ?? const [];
-        _community = mine.where((c) => c.id == widget.communityId && c.isMod).firstOrNull;
+      final communityId = widget.communityId;
+      if (communityId != null) {
+        Community? find(List<Community> list) =>
+            list.where((c) => c.id == communityId && c.can(CommunityPermissions.manageEvents)).firstOrNull;
+        final mine = ref.read(myCommunitiesProvider).value;
+        if (mine != null) {
+          _community = find(mine);
+        } else {
+          ref.read(myCommunitiesProvider.future).then((list) {
+            if (mounted && _community == null) setState(() => _community = find(list));
+          }, onError: (_) {});
+        }
       }
     }
   }
@@ -130,7 +139,14 @@ class _EventEditorScreenState extends ConsumerState<EventEditorScreen> {
   }
 
   Future<void> _pickCommunity() async {
-    final mods = (ref.read(myCommunitiesProvider).value ?? const []).where((c) => c.isMod).toList();
+    List<Community> mine;
+    try {
+      mine = ref.read(myCommunitiesProvider).value ?? await ref.read(myCommunitiesProvider.future);
+    } catch (_) {
+      mine = const [];
+    }
+    if (!mounted) return;
+    final mods = mine.where((c) => c.can(CommunityPermissions.manageEvents)).toList();
     final picked = await showAppSheet<Object>(
       context,
       builder: (sheetContext) => ListView(
@@ -166,7 +182,8 @@ class _EventEditorScreenState extends ConsumerState<EventEditorScreen> {
     setState(() => _busy = true);
     try {
       String? posterUrl = _existingPosterUrl;
-      if (_posterImage != null) posterUrl = await ref.read(storageRepositoryProvider).uploadMedia(_posterImage!, folder: 'posters');
+      if (_posterImage != null)
+        posterUrl = await ref.read(storageRepositoryProvider).uploadMedia(_posterImage!, folder: 'posters');
       final me = ref.read(myProfileProvider).value;
       final capacity = int.tryParse(_capacity.text.trim());
       final fields = {
@@ -250,7 +267,10 @@ class _EventEditorScreenState extends ConsumerState<EventEditorScreen> {
                 child: _posterImage != null
                     ? ClipRRect(
                         borderRadius: BorderRadius.circular(Radii.lg),
-                        child: AspectRatio(aspectRatio: 4 / 5, child: Image.memory(_posterImage!.bytes, fit: BoxFit.cover)),
+                        child: AspectRatio(
+                          aspectRatio: 4 / 5,
+                          child: Image.memory(_posterImage!.bytes, fit: BoxFit.cover),
+                        ),
                       )
                     : EventPoster(
                         title: _title.text.trim().isEmpty ? 'Your event title' : _title.text.trim(),
@@ -354,7 +374,12 @@ class _EventEditorScreenState extends ConsumerState<EventEditorScreen> {
                   ('24 hours', const Duration(hours: 24)),
                   ('36 hours', const Duration(hours: 36)),
                 ])
-                  PillChip(label: label, dense: true, selected: _length == duration, onTap: () => setState(() => _length = duration)),
+                  PillChip(
+                    label: label,
+                    dense: true,
+                    selected: _length == duration,
+                    onTap: () => setState(() => _length = duration),
+                  ),
               ],
             ),
             const SizedBox(height: Space.xl),
@@ -368,12 +393,23 @@ class _EventEditorScreenState extends ConsumerState<EventEditorScreen> {
                   ('online', 'Online', AppIcons.monitor),
                   ('hybrid', 'Both', AppIcons.globe),
                 ])
-                  PillChip(label: label, icon: icon, dense: true, selected: _mode == value, onTap: () => setState(() => _mode = value)),
+                  PillChip(
+                    label: label,
+                    icon: icon,
+                    dense: true,
+                    selected: _mode == value,
+                    onTap: () => setState(() => _mode = value),
+                  ),
               ],
             ),
             const SizedBox(height: Space.md),
             if (_mode != 'online') ...[
-              AppTextField(label: 'Venue', hint: 'e.g. Seminar Hall 2, CS Block', controller: _venue, onChanged: (_) => setState(() {})),
+              AppTextField(
+                label: 'Venue',
+                hint: 'e.g. Seminar Hall 2, CS Block',
+                controller: _venue,
+                onChanged: (_) => setState(() {}),
+              ),
               const SizedBox(height: Space.md),
               AppTextField(label: 'Address (optional)', controller: _address),
               const SizedBox(height: Space.md),
@@ -436,7 +472,12 @@ class _EventEditorScreenState extends ConsumerState<EventEditorScreen> {
               maxLength: 5000,
             ),
             const SizedBox(height: Space.xl),
-            AppButton(label: _editing ? 'Save changes' : 'Publish event', expand: true, loading: _busy, onPressed: _save),
+            AppButton(
+              label: _editing ? 'Save changes' : 'Publish event',
+              expand: true,
+              loading: _busy,
+              onPressed: _save,
+            ),
             if (_editing) ...[
               const SizedBox(height: Space.sm),
               AppButton(label: 'Cancel event', variant: ButtonVariant.danger, expand: true, onPressed: _cancelEvent),

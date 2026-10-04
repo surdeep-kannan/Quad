@@ -164,6 +164,8 @@ class Message {
     this.editedAt,
     this.deletedAt,
     this.sendState = SendState.sent,
+    this.isAnonymous = false,
+    this.anonName,
   });
 
   factory Message.fromJson(Json json) {
@@ -182,6 +184,8 @@ class Message {
       editedAt: dateOrNull(json['edited_at']),
       deletedAt: dateOrNull(json['deleted_at']),
       createdAt: dateOf(json['created_at']),
+      isAnonymous: boolOf(json['is_anonymous']),
+      anonName: stringOrNull(json['anon_name']),
     );
   }
 
@@ -201,6 +205,10 @@ class Message {
   final DateTime? deletedAt;
   final DateTime createdAt;
   final SendState sendState;
+
+  /// Sent under [anonName] in a room; the server stores no sender.
+  final bool isAnonymous;
+  final String? anonName;
 
   bool get isDeleted => deletedAt != null;
   bool get isSystem => kind == 'system' || kind == 'call';
@@ -239,6 +247,8 @@ class Message {
         deletedAt: deletedAt ?? this.deletedAt,
         createdAt: createdAt,
         sendState: sendState ?? this.sendState,
+        isAnonymous: isAnonymous,
+        anonName: anonName,
       );
 
   Json toInsert() => {
@@ -251,6 +261,7 @@ class Message {
         'reply_to_id': replyToId,
         'shared_post_id': sharedPostId,
         'shared_event_id': sharedEventId,
+        'is_anonymous': isAnonymous,
       };
 }
 
