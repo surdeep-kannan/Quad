@@ -7,6 +7,12 @@ Built with **Flutter** (Android, iOS, web) and **Supabase** (Postgres, Auth, Rea
 - [PROJECT.md](PROJECT.md): full guide, including status, what's done and not done, a map of every file, database reference and next steps
 - [SPEC.md](SPEC.md): the product brief
 
+## Screens
+
+| Welcome | Home feed | Community page | Dark mode |
+|---|---|---|---|
+| <img src="screens/01-welcome.png" width="190" /> | <img src="screens/02-home-feed.png" width="190" /> | <img src="screens/03-community-page.png" width="190" /> | <img src="screens/04-dark-mode.png" width="190" /> |
+
 ## Quick start
 
 ```bash
